@@ -1,0 +1,49 @@
+[
+  {
+    "name": "repoWithDots",
+    "path": "git@github.com:org/repo-with-dots.v2.git",
+    "category": "edge",
+    "baseBranch": "feature/deep/nested/branch"
+  },
+  {
+    "name": "enterpriseRepo",
+    "path": "https://custom-host.internal:8443/group/subgroup/repo.git",
+    "category": "enterprise"
+  },
+  {
+    "name": "uppercaseRepo",
+    "path": "org/UPPERCASE-Repo",
+    "category": "naming"
+  },
+  {
+    "name": "repoWithNumbers",
+    "path": "org/repo-with-numbers-123",
+    "category": "naming"
+  },
+  {
+    "name": "repo",
+    "path": "org/repo",
+    "category": "",
+    "substitute": false,
+    "substitutions": [],
+    "baseBranch": "main"
+  },
+  {
+    "name": "tagged",
+    "path": "org/tagged",
+    "baseBranch": "v1.2.3-rc1"
+  },
+  {
+    "name": "shaRef",
+    "path": "org/sha-ref",
+    "baseBranch": "abc123def456"
+  },
+  {
+    "name": "withUnknownFields",
+    "path": "org/with-unknown-fields",
+    "category": "test",
+    "futureField": true,
+    "anotherNewThing": [1, 2, 3],
+    "nestedUnknown": {"key": "value"}
+  }
+]

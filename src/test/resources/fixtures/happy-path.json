@@ -1,0 +1,39 @@
+[
+  {
+    "name": "gort",
+    "path": "git@github.com:ClankerGuru/gort.git",
+    "category": "ui",
+    "substitute": true,
+    "substitutions": [
+      "zone.clanker:gort-tokens,tokens",
+      "zone.clanker:gort-foundation,foundation",
+      "zone.clanker:gort-controls,controls"
+    ],
+    "baseBranch": "main"
+  },
+  {
+    "name": "openspecGradle",
+    "path": "https://github.com/ClankerGuru/openspec-gradle.git",
+    "category": "tooling",
+    "substitute": false,
+    "substitutions": [],
+    "baseBranch": "develop"
+  },
+  {
+    "name": "sharedLib",
+    "path": "git@gitlab.com:internal/shared-lib.git",
+    "category": "lib"
+  },
+  {
+    "name": "localBareRepo",
+    "path": "/Users/dev/local-bare-repo.git",
+    "category": "local",
+    "substitute": true,
+    "substitutions": ["com.local:core,core"]
+  },
+  {
+    "name": "siblingProject",
+    "path": "../sibling-project",
+    "category": "sibling"
+  }
+]
