@@ -1,0 +1,14 @@
+plugins {
+    id("clkx-conventions")
+}
+
+gradlePlugin {
+    plugins {
+        register("wrkx") {
+            id = "zone.clanker.gradle.wrkx"
+            implementationClass = "zone.clanker.gradle.wrkx.Wrkx\$SettingsPlugin"
+            displayName = "Workspace Gradle Plugin (wrkx)"
+            description = "Multi-repo workspace management with composite build wiring."
+        }
+    }
+}

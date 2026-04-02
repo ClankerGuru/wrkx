@@ -1,0 +1,32 @@
+[
+  {
+    "name": "multiModule",
+    "path": "org/multi-module",
+    "substitute": true,
+    "substitutions": [
+      "com.example:core,core",
+      "com.example:api,api",
+      "com.example:impl,impl",
+      "com.example:test-utils,test-utils",
+      "com.example:benchmark,:benchmark"
+    ]
+  },
+  {
+    "name": "singleSub",
+    "path": "org/single-sub",
+    "substitute": true,
+    "substitutions": ["com.example:lib,lib"]
+  },
+  {
+    "name": "subsDisabled",
+    "path": "org/subs-disabled",
+    "substitute": false,
+    "substitutions": ["com.example:unused,unused"]
+  },
+  {
+    "name": "noSubs",
+    "path": "org/no-subs",
+    "substitute": true,
+    "substitutions": []
+  }
+]

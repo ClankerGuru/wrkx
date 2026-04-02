@@ -1,0 +1,5 @@
+[
+  {"name": "repo", "path": "org/repo"},
+  {"name": "simpleName", "path": "simple-name"},
+  {"name": "lib", "path": "git@github.com:user/lib.git"}
+]
