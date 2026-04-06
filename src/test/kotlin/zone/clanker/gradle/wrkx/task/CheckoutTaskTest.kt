@@ -174,6 +174,99 @@ class CheckoutTaskTest :
             baseDir.deleteRecursively()
         }
 
+        given("checkout failure for baseBranch (no workingBranch)") {
+            val baseDir = tempDir()
+            val bareRepo = createBareRepo(baseDir, "checkout-fail-base")
+            val repoDir = File(baseDir, "repos")
+            repoDir.mkdirs()
+
+            val cloneDir = File(repoDir, "checkout-fail-base")
+            ProcessBuilder("git", "clone", bareRepo.absolutePath, cloneDir.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+                .waitFor()
+
+            val project = ProjectBuilder.builder().build()
+
+            `when`("checkout is executed for a nonexistent baseBranch with no workingBranch") {
+                val repo =
+                    createTestRepo(
+                        project.objects,
+                        bareRepo.absolutePath,
+                        name = "checkout-fail-base",
+                        baseBranch = "nonexistent/branch",
+                    )
+                repo.clonePath.set(cloneDir)
+
+                then("fails with descriptive error about checkout failure") {
+                    val ex =
+                        shouldThrow<IllegalStateException> {
+                            val task =
+                                project.tasks
+                                    .register(
+                                        "wrkx-checkout-fail-base",
+                                        CheckoutTask::class.java,
+                                        repo,
+                                        repoDir,
+                                        "",
+                                    ).get()
+                            task.checkout()
+                        }
+                    ex.message shouldContain "Failed to checkout"
+                    ex.message shouldContain "nonexistent/branch"
+                }
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("branch creation failure with workingBranch") {
+            val baseDir = tempDir()
+            val bareRepo = createBareRepo(baseDir, "checkout-create-fail")
+            val repoDir = File(baseDir, "repos")
+            repoDir.mkdirs()
+
+            val cloneDir = File(repoDir, "checkout-create-fail")
+            ProcessBuilder("git", "clone", bareRepo.absolutePath, cloneDir.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+                .waitFor()
+
+            val project = ProjectBuilder.builder().build()
+
+            `when`("workingBranch doesn't exist and baseBranch for creation is invalid") {
+                val repo =
+                    createTestRepo(
+                        project.objects,
+                        bareRepo.absolutePath,
+                        name = "checkout-create-fail",
+                        baseBranch = "nonexistent/base",
+                    )
+                repo.clonePath.set(cloneDir)
+
+                then("fails with descriptive error about branch creation failure") {
+                    val ex =
+                        shouldThrow<IllegalStateException> {
+                            val task =
+                                project.tasks
+                                    .register(
+                                        "wrkx-checkout-create-fail",
+                                        CheckoutTask::class.java,
+                                        repo,
+                                        repoDir,
+                                        "feature/will-fail",
+                                    ).get()
+                            task.checkout()
+                        }
+                    ex.message shouldContain "Failed to create branch"
+                    ex.message shouldContain "feature/will-fail"
+                    ex.message shouldContain "nonexistent/base"
+                }
+            }
+
+            baseDir.deleteRecursively()
+        }
+
         given("a repo that doesn't exist on disk") {
             val baseDir = tempDir()
             val repoDir = File(baseDir, "repos")

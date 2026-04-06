@@ -130,4 +130,38 @@ class PullTaskTest :
 
             baseDir.deleteRecursively()
         }
+
+        given("a repo with no remote configured") {
+            val baseDir = tempDir()
+            val repoDir = File(baseDir, "repos")
+            repoDir.mkdirs()
+
+            val localDir = File(repoDir, "local-only")
+            localDir.mkdirs()
+            val initResult =
+                ProcessBuilder("git", "init", localDir.absolutePath)
+                    .redirectErrorStream(true)
+                    .start()
+                    .waitFor()
+            check(initResult == 0) { "git init failed" }
+
+            val project = ProjectBuilder.builder().build()
+            val repo =
+                createTestRepo(project.objects, "file:///org/local-only")
+            repo.clonePath.set(localDir)
+
+            `when`("pull is executed") {
+                val task =
+                    project.tasks
+                        .register("wrkx-pull-local", PullTask::class.java, repo, repoDir)
+                        .get()
+                task.pull()
+
+                then("skips without error") {
+                    // If we got here, it skipped gracefully
+                }
+            }
+
+            baseDir.deleteRecursively()
+        }
     })
