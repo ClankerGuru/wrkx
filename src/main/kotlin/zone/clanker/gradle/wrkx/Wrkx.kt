@@ -15,6 +15,9 @@ import zone.clanker.gradle.wrkx.model.RepositoryEntry
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import zone.clanker.gradle.wrkx.task.CheckoutTask
 import zone.clanker.gradle.wrkx.task.CloneTask
+import zone.clanker.gradle.wrkx.task.ParallelCheckoutTask
+import zone.clanker.gradle.wrkx.task.ParallelCloneTask
+import zone.clanker.gradle.wrkx.task.ParallelPullTask
 import zone.clanker.gradle.wrkx.task.PruneTask
 import zone.clanker.gradle.wrkx.task.PullTask
 import zone.clanker.gradle.wrkx.task.StatusTask
@@ -289,7 +292,7 @@ data object Wrkx {
                     Action { project ->
                         project.registerCatalogTask()
                         project.registerPerRepoTasks(extension, repoDir)
-                        project.registerLifecycleTasks()
+                        project.registerLifecycleTasks(extension, repoDir)
                         project.registerUtilityTasks(extension, repoDir)
                     },
                 )
@@ -363,10 +366,6 @@ data object Wrkx {
                     }
             }
 
-            private val perRepoCloneTasks = mutableListOf<String>()
-            private val perRepoPullTasks = mutableListOf<String>()
-            private val perRepoCheckoutTasks = mutableListOf<String>()
-
             private fun Project.registerCatalogTask() {
                 if (tasks.findByName(TASK_CATALOG) != null) return
 
@@ -401,14 +400,8 @@ data object Wrkx {
             ) {
                 extension.repos.all { repo ->
                     val safeName = repo.sanitizedBuildName
-
-                    perRepoCloneTasks.add("$TASK_CLONE-$safeName")
                     tasks.register("$TASK_CLONE-$safeName", CloneTask::class.java, repo, repoDir)
-
-                    perRepoPullTasks.add("$TASK_PULL-$safeName")
                     tasks.register("$TASK_PULL-$safeName", PullTask::class.java, repo, repoDir)
-
-                    perRepoCheckoutTasks.add("$TASK_CHECKOUT-$safeName")
                     tasks.register(
                         "$TASK_CHECKOUT-$safeName",
                         CheckoutTask::class.java,
@@ -419,24 +412,29 @@ data object Wrkx {
                 }
             }
 
-            private fun Project.registerLifecycleTasks() {
-                tasks.register(TASK_CLONE).configure { task ->
-                    task.group = GROUP
-                    task.description = "Clone all repos defined in $CONFIG_FILE"
-                    task.dependsOn(perRepoCloneTasks)
-                }
-
-                tasks.register(TASK_PULL).configure { task ->
-                    task.group = GROUP
-                    task.description = "Pull baseBranch for all repos from their remotes"
-                    task.dependsOn(perRepoPullTasks)
-                }
-
-                tasks.register(TASK_CHECKOUT).configure { task ->
-                    task.group = GROUP
-                    task.description = "Checkout workingBranch (or baseBranch) across all repos"
-                    task.dependsOn(perRepoCheckoutTasks)
-                }
+            private fun Project.registerLifecycleTasks(
+                extension: SettingsExtension,
+                repoDir: File,
+            ) {
+                tasks.register(
+                    TASK_CLONE,
+                    ParallelCloneTask::class.java,
+                    extension.repos,
+                    repoDir,
+                )
+                tasks.register(
+                    TASK_PULL,
+                    ParallelPullTask::class.java,
+                    extension.repos,
+                    repoDir,
+                )
+                tasks.register(
+                    TASK_CHECKOUT,
+                    ParallelCheckoutTask::class.java,
+                    extension.repos,
+                    repoDir,
+                    extension.workingBranch ?: "",
+                )
             }
 
             private fun Project.registerUtilityTasks(
