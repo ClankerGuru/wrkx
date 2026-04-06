@@ -15,6 +15,7 @@ import zone.clanker.gradle.wrkx.model.RepositoryEntry
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import zone.clanker.gradle.wrkx.task.CheckoutTask
 import zone.clanker.gradle.wrkx.task.CloneTask
+import zone.clanker.gradle.wrkx.task.GitOperations
 import zone.clanker.gradle.wrkx.task.PruneTask
 import zone.clanker.gradle.wrkx.task.PullTask
 import zone.clanker.gradle.wrkx.task.StatusTask
@@ -221,7 +222,7 @@ data object Wrkx {
                 }
             }
 
-            private fun includeRepo(repo: WorkspaceRepository) {
+            internal fun includeRepo(repo: WorkspaceRepository) {
                 val cloneDir = repo.clonePath.asFile.get()
                 if (!cloneDir.exists()) {
                     println(
@@ -289,33 +290,33 @@ data object Wrkx {
                     Action { project ->
                         project.registerCatalogTask()
                         project.registerPerRepoTasks(extension, repoDir)
-                        project.registerLifecycleTasks()
+                        project.registerLifecycleTasks(extension, repoDir)
                         project.registerUtilityTasks(extension, repoDir)
                     },
                 )
             }
 
-            private fun isDisabled(): Boolean =
+            internal fun isDisabled(): Boolean =
                 providers.gradleProperty(ENABLED_PROP).orNull?.lowercase() == "false"
 
-            private fun isAlreadyApplied(settings: Settings): Boolean =
+            internal fun isAlreadyApplied(settings: Settings): Boolean =
                 settings.extensions.findByType(SettingsExtension::class.java) != null
 
-            private fun resolveRepoDir(): File {
+            internal fun resolveRepoDir(): File {
                 val settingsDir = layout.settingsDirectory.asFile
                 return File(settingsDir.parentFile ?: settingsDir, "${settingsDir.name}-repos")
             }
 
-            private fun createExtension(settings: Settings, repoDir: File): SettingsExtension {
+            internal fun createExtension(settings: Settings, repoDir: File): SettingsExtension {
                 val extension =
                     settings.extensions.create(EXTENSION_NAME, SettingsExtension::class.java, settings)
                 extension.baseDir.set(repoDir)
                 return extension
             }
 
-            private val json = Json { ignoreUnknownKeys = true }
+            internal val json = Json { ignoreUnknownKeys = true }
 
-            private fun populateFromConfig(extension: SettingsExtension, repoDir: File) {
+            internal fun populateFromConfig(extension: SettingsExtension, repoDir: File) {
                 val configFile = layout.settingsDirectory.file(CONFIG_FILE).asFile
                 if (!configFile.exists()) {
                     configFile.writeText("[]\n")
@@ -363,11 +364,7 @@ data object Wrkx {
                     }
             }
 
-            private val perRepoCloneTasks = mutableListOf<String>()
-            private val perRepoPullTasks = mutableListOf<String>()
-            private val perRepoCheckoutTasks = mutableListOf<String>()
-
-            private fun Project.registerCatalogTask() {
+            internal fun Project.registerCatalogTask() {
                 if (tasks.findByName(TASK_CATALOG) != null) return
 
                 tasks.register(TASK_CATALOG).configure { task ->
@@ -395,20 +392,14 @@ data object Wrkx {
                 }
             }
 
-            private fun Project.registerPerRepoTasks(
+            internal fun Project.registerPerRepoTasks(
                 extension: SettingsExtension,
                 repoDir: File,
             ) {
                 extension.repos.all { repo ->
                     val safeName = repo.sanitizedBuildName
-
-                    perRepoCloneTasks.add("$TASK_CLONE-$safeName")
                     tasks.register("$TASK_CLONE-$safeName", CloneTask::class.java, repo, repoDir)
-
-                    perRepoPullTasks.add("$TASK_PULL-$safeName")
                     tasks.register("$TASK_PULL-$safeName", PullTask::class.java, repo, repoDir)
-
-                    perRepoCheckoutTasks.add("$TASK_CHECKOUT-$safeName")
                     tasks.register(
                         "$TASK_CHECKOUT-$safeName",
                         CheckoutTask::class.java,
@@ -419,27 +410,45 @@ data object Wrkx {
                 }
             }
 
-            private fun Project.registerLifecycleTasks() {
+            internal fun Project.registerLifecycleTasks(
+                extension: SettingsExtension,
+                repoDir: File,
+            ) {
+                val repos = extension.repos
+                val wb = extension.workingBranch ?: ""
+
                 tasks.register(TASK_CLONE).configure { task ->
                     task.group = GROUP
                     task.description = "Clone all repos defined in $CONFIG_FILE"
-                    task.dependsOn(perRepoCloneTasks)
+                    task.doLast {
+                        GitOperations.runParallel(repos.toList(), "clone") { repo ->
+                            GitOperations.cloneRepo(repo, repoDir)
+                        }
+                    }
                 }
 
                 tasks.register(TASK_PULL).configure { task ->
                     task.group = GROUP
                     task.description = "Pull baseBranch for all repos from their remotes"
-                    task.dependsOn(perRepoPullTasks)
+                    task.doLast {
+                        GitOperations.runParallel(repos.toList(), "pull") { repo ->
+                            GitOperations.pullRepo(repo, repoDir)
+                        }
+                    }
                 }
 
                 tasks.register(TASK_CHECKOUT).configure { task ->
                     task.group = GROUP
                     task.description = "Checkout workingBranch (or baseBranch) across all repos"
-                    task.dependsOn(perRepoCheckoutTasks)
+                    task.doLast {
+                        GitOperations.runParallel(repos.toList(), "checkout") { repo ->
+                            GitOperations.checkoutRepo(repo, repoDir, wb)
+                        }
+                    }
                 }
             }
 
-            private fun Project.registerUtilityTasks(
+            internal fun Project.registerUtilityTasks(
                 extension: SettingsExtension,
                 repoDir: File,
             ) {

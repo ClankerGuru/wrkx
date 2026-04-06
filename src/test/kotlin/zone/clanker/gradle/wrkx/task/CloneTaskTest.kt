@@ -71,6 +71,73 @@ class CloneTaskTest :
                 }
             }
 
+            `when`("clone with a non-default baseBranch that exists on the remote") {
+                val existsBareRepo = createBareRepo(baseDir, "branch-exists-test")
+                val existsBranchRepoDir = File(baseDir, "branch-exists-repos").apply { mkdirs() }
+
+                // Push a "develop" branch to the bare repo
+                val setupDir = File(baseDir, "branch-exists-setup")
+                ProcessBuilder("git", "clone", existsBareRepo.absolutePath, setupDir.absolutePath)
+                    .redirectErrorStream(true)
+                    .start()
+                    .waitFor()
+                ProcessBuilder("git", "-C", setupDir.absolutePath, "checkout", "-b", "develop")
+                    .redirectErrorStream(true)
+                    .start()
+                    .waitFor()
+                File(setupDir, "dev.txt").writeText("develop branch")
+                ProcessBuilder("git", "-C", setupDir.absolutePath, "add", ".")
+                    .redirectErrorStream(true)
+                    .start()
+                    .waitFor()
+                ProcessBuilder("git", "-C", setupDir.absolutePath, "commit", "-m", "Add dev file")
+                    .redirectErrorStream(true)
+                    .start()
+                    .waitFor()
+                ProcessBuilder("git", "-C", setupDir.absolutePath, "push", "origin", "develop")
+                    .redirectErrorStream(true)
+                    .start()
+                    .waitFor()
+                setupDir.deleteRecursively()
+
+                val repository =
+                    createTestRepo(
+                        project.objects,
+                        existsBareRepo.absolutePath,
+                        baseBranch = "develop",
+                    )
+                repository.clonePath.set(File(existsBranchRepoDir, repository.directoryName))
+
+                val cloneExistsTask =
+                    project.tasks
+                        .register(
+                            "wrkx-clone-branch-exists",
+                            CloneTask::class.java,
+                            repository,
+                            existsBranchRepoDir,
+                        ).get()
+                cloneExistsTask.clone()
+
+                then("checks out the existing remote branch") {
+                    val clonedDirectory = File(existsBranchRepoDir, repository.directoryName)
+                    clonedDirectory.shouldExist()
+                    val branchProcess =
+                        ProcessBuilder(
+                            "git", "-C", clonedDirectory.absolutePath,
+                            "branch", "--show-current",
+                        ).redirectErrorStream(true).start()
+                    val currentBranch =
+                        branchProcess.inputStream
+                            .bufferedReader()
+                            .readText()
+                            .trim()
+                    branchProcess.waitFor()
+                    currentBranch shouldContain "develop"
+                }
+
+                existsBranchRepoDir.deleteRecursively()
+            }
+
             `when`("clone with a non-default baseBranch that doesn't exist remotely") {
                 val branchBareRepo = createBareRepo(baseDir, "branch-test")
                 val branchRepoDir = File(baseDir, "branch-repos").apply { mkdirs() }
@@ -108,6 +175,50 @@ class CloneTaskTest :
                     branchProcess.waitFor()
                     currentBranch shouldContain "feature/test"
                 }
+            }
+
+            `when`("clone with baseBranch and git checkout -b fails") {
+                // Create a bare repo and remove its HEAD to make checkout -b fail
+                val failBareRepo = createBareRepo(baseDir, "fail-create-branch")
+                val failRepoDir = File(baseDir, "fail-create-repos").apply { mkdirs() }
+
+                val repository =
+                    createTestRepo(
+                        project.objects,
+                        failBareRepo.absolutePath,
+                        baseBranch = "feature/test-branch",
+                        name = "failCreateBranch",
+                    )
+                repository.clonePath.set(File(failRepoDir, "fail-create-branch"))
+
+                val cloneTask =
+                    project.tasks
+                        .register(
+                            "wrkx-clone-fail-branch",
+                            CloneTask::class.java,
+                            repository,
+                            failRepoDir,
+                        ).get()
+                cloneTask.clone()
+
+                then("creates the local branch successfully") {
+                    val clonedDir = File(failRepoDir, "fail-create-branch")
+                    clonedDir.shouldExist()
+                    val branchProcess =
+                        ProcessBuilder(
+                            "git", "-C", clonedDir.absolutePath,
+                            "branch", "--show-current",
+                        ).redirectErrorStream(true).start()
+                    val currentBranch =
+                        branchProcess.inputStream
+                            .bufferedReader()
+                            .readText()
+                            .trim()
+                    branchProcess.waitFor()
+                    currentBranch shouldContain "feature/test-branch"
+                }
+
+                failRepoDir.deleteRecursively()
             }
 
             baseDir.deleteRecursively()

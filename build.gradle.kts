@@ -2,6 +2,10 @@ plugins {
     id("clkx-conventions")
 }
 
+dependencies {
+    testImplementation("io.mockk:mockk:1.13.13")
+}
+
 gradlePlugin {
     plugins {
         register("wrkx") {

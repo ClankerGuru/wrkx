@@ -76,6 +76,11 @@ class WorkspaceRepositoryTest :
                     repo.enable(false)
                     repo.enabled.shouldBeFalse()
                 }
+
+                then("enable with default parameter (no arg) enables") {
+                    repo.enable()
+                    repo.enabled.shouldBeTrue()
+                }
             }
         }
 

@@ -107,6 +107,36 @@ class PruneTaskTest :
             }
         }
 
+        given("repos directory is a file (listFiles returns null)") {
+
+            `when`("prune is executed") {
+                val baseDir = tempDir()
+                val repoFile = File(baseDir, "repos-file")
+                repoFile.writeText("not a directory")
+
+                val container = createContainer("libA")
+                container.getByName("libA").path.set(RepositoryUrl("org/lib-a"))
+
+                val project = ProjectBuilder.builder().build()
+
+                then("handles null listFiles gracefully") {
+                    // repoFile.exists() is true but listFiles() returns null because
+                    // it's a file not a directory -- tests the ?: emptyList() branch
+                    val task =
+                        project.tasks
+                            .register(
+                                "wrkx-prune-file",
+                                PruneTask::class.java,
+                                container,
+                                repoFile,
+                            ).get()
+                    task.prune()
+                }
+
+                baseDir.deleteRecursively()
+            }
+        }
+
         given("repos directory that doesn't exist") {
 
             `when`("prune is executed") {
