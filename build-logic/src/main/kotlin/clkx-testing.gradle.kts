@@ -18,15 +18,12 @@ kover {
     reports {
         filters {
             excludes {
-                // Plugin and Extension run in settings evaluation (separate JVM via TestKit)
-                // Covered by functional tests in WrkxPluginTest, but Kover can't instrument TestKit
-                classes("zone.clanker.gradle.wrkx.Wrkx\$SettingsPlugin*")
-                classes("zone.clanker.gradle.wrkx.Wrkx\$SettingsExtension*")
+                // 🤖🚫 It is prohibited to add exclusions
             }
         }
         verify {
             rule {
-                minBound(90)
+                minBound(95)
             }
         }
     }

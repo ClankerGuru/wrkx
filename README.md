@@ -1,10 +1,10 @@
 # wrkx
 
 [![Build](https://github.com/ClankerGuru/wrkx/actions/workflows/build.yml/badge.svg)](https://github.com/ClankerGuru/wrkx/actions/workflows/build.yml)
-[![Gradle Plugin](https://img.shields.io/badge/Gradle%20Plugin-0.37.0-blue)](https://github.com/ClankerGuru/wrkx)
+[![Gradle Plugin](https://img.shields.io/badge/Gradle%20Plugin-0.38.0-blue)](https://github.com/ClankerGuru/wrkx)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-purple)](https://kotlinlang.org)
 [![Gradle](https://img.shields.io/badge/Gradle-9.4.1-green)](https://gradle.org)
-[![Coverage](https://img.shields.io/badge/Coverage-%E2%89%A590%25-brightgreen)](https://github.com/ClankerGuru/wrkx)
+[![Coverage](https://img.shields.io/badge/Coverage-%E2%89%A595%25-brightgreen)](https://github.com/ClankerGuru/wrkx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT)
 
 **Multi-repository workspace management for Gradle.**
@@ -315,7 +315,7 @@ This single command runs everything:
 | Unit tests | `test` | Model, task, and plugin behavior |
 | Integration tests | `test` | Full lifecycle against Gitea in Testcontainers |
 | Architecture tests | `slopTest` | Konsist: naming, packages, annotations, forbidden patterns |
-| Coverage | `koverVerify` | Line coverage >= 90% enforced |
+| Coverage | `koverVerify` | Line coverage >= 95% enforced |
 | Plugin validation | `validatePlugins` | Gradle plugin descriptor is valid |
 
 ### Common commands
@@ -334,10 +334,10 @@ This single command runs everything:
 
 ### Code coverage
 
-Coverage is enforced at **90% minimum** line coverage via [Kover](https://github.com/Kotlin/kotlinx-kover).
+Coverage is enforced at **95% minimum** line coverage via [Kover](https://github.com/Kotlin/kotlinx-kover).
 
 ```bash
-# Check coverage threshold (fails if below 90%)
+# Check coverage threshold (fails if below 95%)
 ./gradlew koverVerify
 
 # Print coverage summary to terminal
@@ -352,7 +352,7 @@ open build/reports/kover/html/index.html
 # output: build/reports/kover/report.xml
 ```
 
-The plugin entry point (`Wrkx.SettingsPlugin`, `Wrkx.SettingsExtension`) is excluded from coverage because it runs in a separate JVM via Gradle TestKit and cannot be instrumented by Kover.
+No classes are excluded from coverage. All code is tested directly or through Gradle TestKit.
 
 ### Static analysis
 

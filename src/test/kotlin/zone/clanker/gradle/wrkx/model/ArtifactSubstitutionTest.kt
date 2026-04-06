@@ -160,6 +160,62 @@ class ArtifactSubstitutionTest :
             }
         }
 
+        given("ArtifactId toString") {
+            `when`("called on a valid artifact") {
+                then("returns the raw value") {
+                    ArtifactId("com.example:lib").toString() shouldBe "com.example:lib"
+                }
+            }
+        }
+
+        given("ArtifactId serialization round-trip via JSON") {
+            `when`("serializing and deserializing") {
+                then("produces the original value") {
+                    val original = ArtifactId("zone.clanker:gort-tokens")
+                    val serialized = json.encodeToString(ArtifactId.serializer(), original)
+                    serialized shouldBe "\"zone.clanker:gort-tokens\""
+                    val deserialized = json.decodeFromString(ArtifactId.serializer(), serialized)
+                    deserialized shouldBe original
+                }
+            }
+
+            `when`("deserializing a blank value") {
+                then("throws SerializationException") {
+                    shouldThrow<SerializationException> {
+                        json.decodeFromString(ArtifactId.serializer(), "\"  \"")
+                    }
+                }
+            }
+        }
+
+        given("ProjectPath toString") {
+            `when`("called on a valid project path") {
+                then("returns the raw value") {
+                    ProjectPath("tokens").toString() shouldBe "tokens"
+                }
+            }
+        }
+
+        given("ProjectPath serialization round-trip via JSON") {
+            `when`("serializing and deserializing") {
+                then("produces the original value") {
+                    val original = ProjectPath("tokens")
+                    val serialized = json.encodeToString(ProjectPath.serializer(), original)
+                    serialized shouldBe "\"tokens\""
+                    val deserialized = json.decodeFromString(ProjectPath.serializer(), serialized)
+                    deserialized shouldBe original
+                }
+            }
+
+            `when`("deserializing a blank value") {
+                then("throws SerializationException") {
+                    shouldThrow<SerializationException> {
+                        json.decodeFromString(ProjectPath.serializer(), "\"  \"")
+                    }
+                }
+            }
+        }
+
         given("edge cases in comma handling") {
             `when`("input has comma in project portion") {
                 then("splits on first comma only") {
