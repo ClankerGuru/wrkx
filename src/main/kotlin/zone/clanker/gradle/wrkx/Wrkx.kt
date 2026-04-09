@@ -8,6 +8,7 @@ import org.gradle.api.Project
 import org.gradle.api.file.BuildLayout
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.initialization.Settings
+import org.gradle.api.logging.Logging
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ProviderFactory
 import zone.clanker.gradle.wrkx.model.GitReference
@@ -94,6 +95,8 @@ data object Wrkx {
             private val settings: Settings,
             private val objects: ObjectFactory,
         ) {
+            private val logger = Logging.getLogger(SettingsExtension::class.java)
+
             /** Base directory where repos are cloned (sibling to the project). */
             abstract val baseDir: DirectoryProperty
 
@@ -225,7 +228,7 @@ data object Wrkx {
             internal fun includeRepo(repo: WorkspaceRepository) {
                 val cloneDir = repo.clonePath.asFile.get()
                 if (!cloneDir.exists()) {
-                    println(
+                    logger.warn(
                         "wrkx: Repository '${repo.repoName}' not cloned at ${cloneDir.absolutePath}. " +
                             "Run './gradlew $TASK_CLONE-${repo.sanitizedBuildName}' to clone it.",
                     )
@@ -273,6 +276,8 @@ data object Wrkx {
             private val providers: ProviderFactory,
             private val layout: BuildLayout,
         ) : Plugin<Settings> {
+            private val logger = Logging.getLogger(SettingsPlugin::class.java)
+
             override fun apply(settings: Settings) {
                 if (isDisabled()) return
                 if (isAlreadyApplied(settings)) return
@@ -320,7 +325,7 @@ data object Wrkx {
                 val configFile = layout.settingsDirectory.file(CONFIG_FILE).asFile
                 if (!configFile.exists()) {
                     configFile.writeText("[]\n")
-                    println(
+                    logger.lifecycle(
                         """
                         wrkx: Created empty $CONFIG_FILE at ${configFile.absolutePath}.
                         Add repositories to this file to manage your workspace. Example:
@@ -371,7 +376,7 @@ data object Wrkx {
                     task.group = GROUP
                     task.description = "List all available workspace tasks"
                     task.doLast {
-                        println(
+                        logger.lifecycle(
                             """
                         |
                         |Workspace Tasks ($GROUP)

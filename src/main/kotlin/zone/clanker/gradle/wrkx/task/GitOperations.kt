@@ -1,5 +1,6 @@
 package zone.clanker.gradle.wrkx.task
 
+import org.gradle.api.logging.Logging
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
 import java.util.concurrent.Callable
@@ -11,6 +12,7 @@ import java.util.concurrent.Executors
  * Runs git commands across multiple repos concurrently using a fixed thread pool.
  */
 internal object GitOperations {
+    private val logger = Logging.getLogger(GitOperations::class.java)
     private const val THREAD_POOL_SIZE = 4
 
     fun runParallel(
@@ -19,7 +21,7 @@ internal object GitOperations {
         work: (WorkspaceRepository) -> String,
     ) {
         if (repos.isEmpty()) {
-            println("wrkx: No repos to $action.")
+            logger.lifecycle("wrkx: No repos to $action.")
             return
         }
         val pool = Executors.newFixedThreadPool(THREAD_POOL_SIZE)
@@ -35,9 +37,9 @@ internal object GitOperations {
         val results = futures.map { it.get() }
         pool.shutdown()
         pool.awaitTermination(Long.MAX_VALUE, java.util.concurrent.TimeUnit.MILLISECONDS)
-        results.forEach { println(it) }
+        results.forEach { logger.lifecycle(it) }
         val failed = results.count { it.startsWith("FAIL") }
-        println("wrkx: $action complete — ${repos.size} repos, $failed failed")
+        logger.lifecycle("wrkx: $action complete — ${repos.size} repos, $failed failed")
         if (failed > 0) error("wrkx: $failed repo(s) failed during $action")
     }
 
