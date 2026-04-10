@@ -410,7 +410,7 @@ data object Wrkx {
                         CheckoutTask::class.java,
                         repo,
                         repoDir,
-                        extension.workingBranch ?: "",
+                        provider { extension.workingBranch ?: "" },
                     )
                 }
             }
@@ -420,7 +420,6 @@ data object Wrkx {
                 repoDir: File,
             ) {
                 val repos = extension.repos
-                val wb = extension.workingBranch ?: ""
 
                 tasks.register(TASK_CLONE).configure { task ->
                     task.group = GROUP
@@ -446,6 +445,7 @@ data object Wrkx {
                     task.group = GROUP
                     task.description = "Checkout workingBranch (or baseBranch) across all repos"
                     task.doLast {
+                        val wb = extension.workingBranch ?: ""
                         GitOperations.runParallel(repos.toList(), "checkout") { repo ->
                             GitOperations.checkoutRepo(repo, repoDir, wb)
                         }

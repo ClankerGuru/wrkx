@@ -107,20 +107,42 @@ internal object GitOperations {
         }
     }
 
-    private fun exec(vararg cmd: String): Int =
-        ProcessBuilder(*cmd).redirectErrorStream(true).start().let {
-            it.inputStream.bufferedReader().readText()
-            it.waitFor()
-        }
+    private const val PROCESS_TIMEOUT_SECONDS = 120L
 
-    private fun execOutput(vararg cmd: String): String =
-        ProcessBuilder(*cmd).redirectErrorStream(true).start().let {
-            val out =
-                it.inputStream
-                    .bufferedReader()
-                    .readText()
-                    .trim()
-            it.waitFor()
-            out
+    private fun exec(vararg cmd: String): Int {
+        val process =
+            ProcessBuilder(*cmd)
+                .redirectErrorStream(true)
+                .also { it.environment()["GIT_TERMINAL_PROMPT"] = "0" }
+                .start()
+        val output =
+            process.inputStream
+                .bufferedReader()
+                .readText()
+        val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            error("Process timed out after ${PROCESS_TIMEOUT_SECONDS}s: ${cmd.joinToString(" ")}\nOutput: $output")
         }
+        return process.exitValue()
+    }
+
+    private fun execOutput(vararg cmd: String): String {
+        val process =
+            ProcessBuilder(*cmd)
+                .redirectErrorStream(true)
+                .also { it.environment()["GIT_TERMINAL_PROMPT"] = "0" }
+                .start()
+        val output =
+            process.inputStream
+                .bufferedReader()
+                .readText()
+                .trim()
+        val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            error("Process timed out after ${PROCESS_TIMEOUT_SECONDS}s: ${cmd.joinToString(" ")}\nOutput: $output")
+        }
+        return output
+    }
 }
