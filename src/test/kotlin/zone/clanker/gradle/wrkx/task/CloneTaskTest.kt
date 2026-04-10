@@ -178,8 +178,11 @@ class CloneTaskTest :
             }
 
             `when`("clone with baseBranch and git checkout -b fails") {
-                // Create a bare repo and remove its HEAD to make checkout -b fail
                 val failBareRepo = createBareRepo(baseDir, "fail-create-branch")
+                // Corrupt the bare repo by removing HEAD so checkout -b fails
+                // after cloning an empty/broken state
+                File(failBareRepo, "HEAD").delete()
+                File(failBareRepo, "refs/heads").listFiles()?.forEach { it.delete() }
                 val failRepoDir = File(baseDir, "fail-create-repos").apply { mkdirs() }
 
                 val repository =
@@ -199,23 +202,11 @@ class CloneTaskTest :
                             repository,
                             failRepoDir,
                         ).get()
-                cloneTask.clone()
 
-                then("creates the local branch successfully") {
-                    val clonedDir = File(failRepoDir, "fail-create-branch")
-                    clonedDir.shouldExist()
-                    val branchProcess =
-                        ProcessBuilder(
-                            "git", "-C", clonedDir.absolutePath,
-                            "branch", "--show-current",
-                        ).redirectErrorStream(true).start()
-                    val currentBranch =
-                        branchProcess.inputStream
-                            .bufferedReader()
-                            .readText()
-                            .trim()
-                    branchProcess.waitFor()
-                    currentBranch shouldContain "feature/test-branch"
+                then("fails with an error from git") {
+                    io.kotest.assertions.throwables.shouldThrow<Exception> {
+                        cloneTask.clone()
+                    }
                 }
 
                 failRepoDir.deleteRecursively()

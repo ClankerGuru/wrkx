@@ -1,5 +1,6 @@
 package zone.clanker.gradle.wrkx.task
 
+import org.gradle.api.logging.Logging
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
 import java.util.concurrent.Callable
@@ -11,6 +12,7 @@ import java.util.concurrent.Executors
  * Runs git commands across multiple repos concurrently using a fixed thread pool.
  */
 internal object GitOperations {
+    private val logger = Logging.getLogger(GitOperations::class.java)
     private const val THREAD_POOL_SIZE = 4
 
     fun runParallel(
@@ -19,7 +21,7 @@ internal object GitOperations {
         work: (WorkspaceRepository) -> String,
     ) {
         if (repos.isEmpty()) {
-            println("wrkx: No repos to $action.")
+            logger.lifecycle("wrkx: No repos to $action.")
             return
         }
         val pool = Executors.newFixedThreadPool(THREAD_POOL_SIZE)
@@ -35,9 +37,9 @@ internal object GitOperations {
         val results = futures.map { it.get() }
         pool.shutdown()
         pool.awaitTermination(Long.MAX_VALUE, java.util.concurrent.TimeUnit.MILLISECONDS)
-        results.forEach { println(it) }
+        results.forEach { logger.lifecycle(it) }
         val failed = results.count { it.startsWith("FAIL") }
-        println("wrkx: $action complete — ${repos.size} repos, $failed failed")
+        logger.lifecycle("wrkx: $action complete — ${repos.size} repos, $failed failed")
         if (failed > 0) error("wrkx: $failed repo(s) failed during $action")
     }
 
@@ -105,20 +107,42 @@ internal object GitOperations {
         }
     }
 
-    private fun exec(vararg cmd: String): Int =
-        ProcessBuilder(*cmd).redirectErrorStream(true).start().let {
-            it.inputStream.bufferedReader().readText()
-            it.waitFor()
-        }
+    private const val PROCESS_TIMEOUT_SECONDS = 120L
 
-    private fun execOutput(vararg cmd: String): String =
-        ProcessBuilder(*cmd).redirectErrorStream(true).start().let {
-            val out =
-                it.inputStream
-                    .bufferedReader()
-                    .readText()
-                    .trim()
-            it.waitFor()
-            out
+    private fun exec(vararg cmd: String): Int {
+        val process =
+            ProcessBuilder(*cmd)
+                .redirectErrorStream(true)
+                .also { it.environment()["GIT_TERMINAL_PROMPT"] = "0" }
+                .start()
+        val output =
+            process.inputStream
+                .bufferedReader()
+                .readText()
+        val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            error("Process timed out after ${PROCESS_TIMEOUT_SECONDS}s: ${cmd.joinToString(" ")}\nOutput: $output")
         }
+        return process.exitValue()
+    }
+
+    private fun execOutput(vararg cmd: String): String {
+        val process =
+            ProcessBuilder(*cmd)
+                .redirectErrorStream(true)
+                .also { it.environment()["GIT_TERMINAL_PROMPT"] = "0" }
+                .start()
+        val output =
+            process.inputStream
+                .bufferedReader()
+                .readText()
+                .trim()
+        val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            error("Process timed out after ${PROCESS_TIMEOUT_SECONDS}s: ${cmd.joinToString(" ")}\nOutput: $output")
+        }
+        return output
+    }
 }

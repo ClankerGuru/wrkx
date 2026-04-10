@@ -69,7 +69,7 @@ class CheckoutTaskTest :
                             CheckoutTask::class.java,
                             repo,
                             repoDir,
-                            "",
+                            project.provider { "" },
                         ).get()
                 task.checkout()
 
@@ -111,7 +111,7 @@ class CheckoutTaskTest :
                             CheckoutTask::class.java,
                             repo,
                             repoDir,
-                            "feature/new-branch",
+                            project.provider { "feature/new-branch" },
                         ).get()
                 task.checkout()
 
@@ -159,7 +159,7 @@ class CheckoutTaskTest :
                                         CheckoutTask::class.java,
                                         repo,
                                         repoDir,
-                                        "",
+                                        project.provider { "" },
                                     ).get()
                             task.checkout()
                         }
@@ -208,7 +208,7 @@ class CheckoutTaskTest :
                                         CheckoutTask::class.java,
                                         repo,
                                         repoDir,
-                                        "",
+                                        project.provider { "" },
                                     ).get()
                             task.checkout()
                         }
@@ -254,7 +254,7 @@ class CheckoutTaskTest :
                                         CheckoutTask::class.java,
                                         repo,
                                         repoDir,
-                                        "feature/will-fail",
+                                        project.provider { "feature/will-fail" },
                                     ).get()
                             task.checkout()
                         }
@@ -286,7 +286,7 @@ class CheckoutTaskTest :
                                 CheckoutTask::class.java,
                                 repo,
                                 repoDir,
-                                "",
+                                project.provider { "" },
                             ).get()
                     // Should not throw -- just warn and skip
                     task.checkout()

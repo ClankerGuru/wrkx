@@ -2,6 +2,7 @@ package zone.clanker.gradle.wrkx.task
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.gradle.testfixtures.ProjectBuilder
 import java.io.File
@@ -158,7 +159,7 @@ class PullTaskTest :
                 task.pull()
 
                 then("skips without error") {
-                    // If we got here, it skipped gracefully
+                    localDir.isDirectory shouldBe true
                 }
             }
 

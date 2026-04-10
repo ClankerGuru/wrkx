@@ -131,6 +131,7 @@ class PruneTaskTest :
                                 repoFile,
                             ).get()
                     task.prune()
+                    repoFile.shouldExist()
                 }
 
                 baseDir.deleteRecursively()
