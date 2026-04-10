@@ -1,6 +1,7 @@
 package zone.clanker.gradle.wrkx.task
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.TaskAction
 import zone.clanker.gradle.wrkx.Wrkx
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
@@ -23,7 +24,7 @@ import javax.inject.Inject
  *
  * @param repo the repository to checkout
  * @param repoDir base directory where repos are cloned
- * @param workingBranchRaw branch override from DSL (empty string means unset)
+ * @param workingBranchProvider lazy branch override from DSL (empty string means unset)
  * @see CloneTask
  * @see PullTask
  */
@@ -33,9 +34,10 @@ abstract class CheckoutTask
     constructor(
         private val repo: WorkspaceRepository,
         private val repoDir: File,
-        private val workingBranchRaw: String,
+        private val workingBranchProvider: Provider<String>,
     ) : DefaultTask() {
-        private val workingBranch: String? = workingBranchRaw.ifBlank { null }
+        private val workingBranch: String?
+            get() = workingBranchProvider.get().ifBlank { null }
 
         init {
             group = Wrkx.GROUP
