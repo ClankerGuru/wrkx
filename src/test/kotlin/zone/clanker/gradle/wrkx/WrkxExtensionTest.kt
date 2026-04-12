@@ -257,7 +257,7 @@ class WrkxExtensionTest :
 
                 then("calls settings.includeBuild") {
                     ext.includeEnabled()
-                    verify { settings.includeBuild(tmpDir, any()) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, any()) }
                 }
 
                 tmpDir.deleteRecursively()
@@ -294,12 +294,12 @@ class WrkxExtensionTest :
 
                 then("calls includeBuild with substitution config") {
                     ext.includeRepo(repo)
-                    verify { settings.includeBuild(tmpDir, any()) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, any()) }
                 }
 
                 then("invokes the includeBuild action to wire spec name and substitutions") {
                     val actionSlot = slot<Action<org.gradle.api.initialization.ConfigurableIncludedBuild>>()
-                    verify { settings.includeBuild(tmpDir, capture(actionSlot)) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, capture(actionSlot)) }
 
                     val spec = mockk<org.gradle.api.initialization.ConfigurableIncludedBuild>(relaxed = true)
                     every { spec.dependencySubstitution(any()) } answers {
@@ -337,12 +337,12 @@ class WrkxExtensionTest :
 
                 then("calls includeBuild without substitution") {
                     ext.includeRepo(repo)
-                    verify { settings.includeBuild(tmpDir, any()) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, any()) }
                 }
 
                 then("invokes the action but does not configure substitutions") {
                     val actionSlot = slot<Action<org.gradle.api.initialization.ConfigurableIncludedBuild>>()
-                    verify { settings.includeBuild(tmpDir, capture(actionSlot)) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, capture(actionSlot)) }
 
                     val spec = mockk<org.gradle.api.initialization.ConfigurableIncludedBuild>(relaxed = true)
                     actionSlot.captured.execute(spec)
