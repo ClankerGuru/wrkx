@@ -145,7 +145,10 @@ data object Wrkx {
              * ```
              */
             fun enableAll() {
-                repos.forEach { it.enable(true) }
+                repos.forEach {
+                    it.enable(true)
+                    includeRepo(it)
+                }
             }
 
             /**
@@ -165,6 +168,10 @@ data object Wrkx {
             /**
              * Enable specific repos by reference for composite build inclusion.
              *
+             * Repos are included as composite builds immediately when enabled,
+             * during settings script evaluation. This ensures IDE sync (IntelliJ)
+             * can resolve the project model correctly.
+             *
              * ```kotlin
              * wrkx {
              *     enable(repos.getByName("gort"), repos.getByName("coreModels"))
@@ -174,7 +181,10 @@ data object Wrkx {
              * @param repositories the repos to enable
              */
             fun enable(vararg repositories: WorkspaceRepository) {
-                repositories.forEach { it.enable(true) }
+                repositories.forEach {
+                    it.enable(true)
+                    includeRepo(it)
+                }
             }
 
             /**
@@ -194,9 +204,12 @@ data object Wrkx {
                 repos.findByName(name)
                     ?: error("Repository '$name' not found in ${CONFIG_FILE}.")
 
+            private val includedBuilds = mutableSetOf<String>()
+
             /**
              * Include only enabled repos as composite builds.
-             * Called after settings evaluation so DSL has had a chance to run.
+             * Acts as a safety net for repos enabled via [WorkspaceRepository.enable]
+             * directly (not through [enable] or [enableAll]).
              */
             internal fun includeEnabled() {
                 val enabledRepos = repos.filter { it.enabled }
@@ -226,7 +239,13 @@ data object Wrkx {
             }
 
             internal fun includeRepo(repo: WorkspaceRepository) {
-                val cloneDir = repo.clonePath.asFile.get()
+                if (!includedBuilds.add(repo.repoName)) return
+
+                if (!repo.clonePath.isPresent) return
+                val cloneDir =
+                    repo.clonePath.asFile
+                        .get()
+                        .canonicalFile
                 if (!cloneDir.exists()) {
                     logger.warn(
                         "wrkx: Repository '${repo.repoName}' not cloned at ${cloneDir.absolutePath}. " +

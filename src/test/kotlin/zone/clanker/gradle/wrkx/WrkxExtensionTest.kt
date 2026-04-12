@@ -257,7 +257,7 @@ class WrkxExtensionTest :
 
                 then("calls settings.includeBuild") {
                     ext.includeEnabled()
-                    verify { settings.includeBuild(tmpDir, any()) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, any()) }
                 }
 
                 tmpDir.deleteRecursively()
@@ -294,12 +294,12 @@ class WrkxExtensionTest :
 
                 then("calls includeBuild with substitution config") {
                     ext.includeRepo(repo)
-                    verify { settings.includeBuild(tmpDir, any()) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, any()) }
                 }
 
                 then("invokes the includeBuild action to wire spec name and substitutions") {
                     val actionSlot = slot<Action<org.gradle.api.initialization.ConfigurableIncludedBuild>>()
-                    verify { settings.includeBuild(tmpDir, capture(actionSlot)) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, capture(actionSlot)) }
 
                     val spec = mockk<org.gradle.api.initialization.ConfigurableIncludedBuild>(relaxed = true)
                     every { spec.dependencySubstitution(any()) } answers {
@@ -337,12 +337,12 @@ class WrkxExtensionTest :
 
                 then("calls includeBuild without substitution") {
                     ext.includeRepo(repo)
-                    verify { settings.includeBuild(tmpDir, any()) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, any()) }
                 }
 
                 then("invokes the action but does not configure substitutions") {
                     val actionSlot = slot<Action<org.gradle.api.initialization.ConfigurableIncludedBuild>>()
-                    verify { settings.includeBuild(tmpDir, capture(actionSlot)) }
+                    verify { settings.includeBuild(tmpDir.canonicalFile, capture(actionSlot)) }
 
                     val spec = mockk<org.gradle.api.initialization.ConfigurableIncludedBuild>(relaxed = true)
                     actionSlot.captured.execute(spec)
@@ -352,6 +352,56 @@ class WrkxExtensionTest :
                 }
 
                 tmpDir.deleteRecursively()
+            }
+        }
+
+        given("includeRepo idempotency") {
+
+            `when`("includeRepo is called twice for the same repo") {
+                val settings = mockk<Settings>(relaxed = true)
+                val ext = objects.newInstance(Wrkx.SettingsExtension::class.java, settings)
+                val tmpDir =
+                    File.createTempFile("wrkx-idem", "").apply {
+                        delete()
+                        mkdirs()
+                        deleteOnExit()
+                    }
+
+                ext.repos.register("lib") { repo ->
+                    repo.path.set(RepositoryUrl("org/lib"))
+                    repo.clonePath.set(tmpDir)
+                    repo.substitute.set(false)
+                }
+
+                val repo = ext.repos.getByName("lib")
+
+                then("calls settings.includeBuild exactly once") {
+                    ext.includeRepo(repo)
+                    ext.includeRepo(repo)
+                    verify(exactly = 1) { settings.includeBuild(tmpDir.canonicalFile, any()) }
+                }
+
+                tmpDir.deleteRecursively()
+            }
+        }
+
+        given("includeRepo early return") {
+
+            `when`("clonePath is not set") {
+                val settings = mockk<Settings>(relaxed = true)
+                val ext = objects.newInstance(Wrkx.SettingsExtension::class.java, settings)
+
+                ext.repos.register("lib") { repo ->
+                    repo.path.set(RepositoryUrl("org/lib"))
+                    repo.substitute.set(false)
+                }
+
+                val repo = ext.repos.getByName("lib")
+
+                then("does not call settings.includeBuild") {
+                    ext.includeRepo(repo)
+                    verify(exactly = 0) { settings.includeBuild(any<File>(), any()) }
+                }
             }
         }
 
