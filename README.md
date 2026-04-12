@@ -1,8 +1,8 @@
 # wrkx
 
 [![Build](https://github.com/ClankerGuru/wrkx/actions/workflows/build.yml/badge.svg)](https://github.com/ClankerGuru/wrkx/actions/workflows/build.yml)
-[![Gradle Plugin](https://img.shields.io/badge/Gradle%20Plugin-0.38.0-blue)](https://github.com/ClankerGuru/wrkx)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-purple)](https://kotlinlang.org)
+[![Maven Central](https://img.shields.io/maven-central/v/zone.clanker/plugin-wrkx?label=Maven%20Central)](https://central.sonatype.com/artifact/zone.clanker/plugin-wrkx)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-purple)](https://kotlinlang.org)
 [![Gradle](https://img.shields.io/badge/Gradle-9.4.1-green)](https://gradle.org)
 [![Coverage](https://img.shields.io/badge/Coverage-%E2%89%A595%25-brightgreen)](https://github.com/ClankerGuru/wrkx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT)
@@ -147,17 +147,19 @@ wrkx {
 
 | Method | Description |
 |--------|-------------|
-| `enableAll()` | Enable all repos from wrkx.json |
-| `disableAll()` | Disable all repos |
-| `enable(vararg repos)` | Enable specific repos |
+| `enableAll()` | Enable all repos and include them as composite builds |
+| `disableAll()` | Disable all repos (does not remove already-included builds) |
+| `enable(vararg repos)` | Enable specific repos and include them as composite builds |
 | `this["name"]` | Access a repo by name for per-repo configuration |
 | `workingBranch = "branch"` | Set working branch for `wrkx-checkout` |
 
 ### How enablement works
 
-The plugin reads `wrkx.json` and registers all repos, but **does not include any as composite builds** until you enable them in the DSL. Only enabled repos get `settings.includeBuild()`. Tasks (clone, pull, checkout) work for all repos regardless of enablement.
+The plugin reads `wrkx.json` and registers all repos, but **does not include any as composite builds** until you enable them in the DSL. Calling `enable()` or `enableAll()` immediately wires the repo via `settings.includeBuild()` during settings evaluation. Tasks (clone, pull, checkout) work for all repos regardless of enablement.
 
 If no `wrkx { }` block is present, no repos are included as composite builds. You must be explicit.
+
+Repos in `workspace-repos/` can be real clones or symlinks to local checkouts -- the plugin resolves canonical paths automatically.
 
 ### Workflow examples
 
@@ -210,6 +212,10 @@ wrkx {
 ./gradlew wrkx-prune           # remove orphaned repo directories
 ```
 
+### Parallel execution
+
+Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`) run git operations across all repos in parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any repo fails.
+
 ### Checkout behavior
 
 - **With `workingBranch` set**: creates/checks out that branch from `baseBranch` in all enabled repos. Fails if working directory is dirty -- commit or stash first.
@@ -225,8 +231,10 @@ wrkx {
 1. Plugin reads `wrkx.json` at settings evaluation time
 2. All repos are registered in a container (tasks work for all)
 3. DSL runs: you enable/disable repos, set workingBranch
-4. After settings evaluation, enabled repos get `settings.includeBuild()` with substitution wiring
-5. Missing repo directories are warned, not failed -- so `wrkx-clone` works on fresh checkouts
+4. `enable()` / `enableAll()` immediately call `settings.includeBuild()` during settings evaluation -- this ensures IntelliJ IDE sync can resolve the project model correctly
+5. Symlinked repo directories are resolved to their canonical paths before inclusion (works around [IDEA-329756](https://youtrack.jetbrains.com/issue/IDEA-329756))
+6. Missing repo directories are warned, not failed -- so `wrkx-clone` works on fresh checkouts
+7. Inclusion is idempotent -- calling `enable()` on the same repo twice is safe
 
 Repos are cloned to a sibling directory:
 
@@ -243,6 +251,10 @@ Repos are cloned to a sibling directory:
 ```
 
 ## Known issues
+
+### IntelliJ sync with symlinked repos (fixed in 0.40.0)
+
+Prior to 0.40.0, IntelliJ Gradle sync would fail with `Missing ExternalProject for :` when workspace repos were symlinks. This was caused by a path mismatch between Gradle (which uses the symlink path) and IntelliJ's TAPI model builder (which resolves to canonical paths). The plugin now resolves all paths via `File.canonicalFile` before calling `settings.includeBuild()`.
 
 ### Kotlin Multiplatform composite builds
 
@@ -401,15 +413,18 @@ Architecture is enforced via [Konsist](https://docs.konsist.lemonappdev.com/) in
 
 **Unit tests** (`src/test/`) -- model serialization, value class validation, task behavior with local git repos. No Docker needed.
 
-**Integration tests** (`src/test/`) -- full lifecycle against a Gitea server in Testcontainers: clone, pull, checkout, prune. Requires Docker. Skipped automatically when Docker is unavailable.
+| Test file | What it covers |
+|-----------|----------------|
+| `WrkxExtensionTest` | DSL behavior: enableAll, disableAll, enable(vararg), operator[], repos(action), workingBranch, duplicate build name detection, includeEnabled, includeRepo idempotency, symlink resolution, clonePath early return |
+| `WrkxSettingsPluginTest` | Plugin lifecycle: disabled property, already-applied guard, resolveRepoDir, createExtension, populateFromConfig, JSON parsing |
+| `WrkxApplyTest` | Gradle TestKit: plugin applies cleanly via settings DSL |
+| `WrkxPluginTest` | Gradle TestKit: enableAll, disableAll, enable, workingBranch, composite build wiring, missing repos warn, empty wrkx.json default |
+| `model/*Test` | Value class validation: RepositoryUrl, GitReference, ArtifactSubstitution, RepositoryEntry, WorkspaceRepository |
+| `task/*Test` | Task behavior: CloneTask, PullTask, CheckoutTask, PruneTask, StatusTask, GitOperations parallel execution |
 
-**Plugin tests** (`src/test/WrkxPluginTest.kt`) -- Gradle TestKit tests verifying:
-- Plugin applies and creates extension
-- `enableAll()`, `disableAll()`, `enable(repo)` DSL behavior
-- `workingBranch` property
-- Repos not enabled are not included as composite builds
-- Missing repos warn instead of fail
-- Empty wrkx.json creates default file
+**Integration tests** (`src/test/CloneIntegrationTest.kt`) -- full clone lifecycle against a Gitea server in Testcontainers. Requires Docker. Skipped automatically when Docker is unavailable.
+
+**Architecture tests** (`src/slopTest/`) -- Konsist structural rules (see [Architecture tests](#architecture-tests) below).
 
 ### Convention plugins (build-logic)
 
@@ -479,7 +494,7 @@ wrkx/
 │       └── ForbiddenPatternTest.kt
 ├── .editorconfig                <- ktlint + editor formatting rules
 ├── build.gradle.kts             <- One line: id("clkx-conventions")
-├── settings.gradle.kts          <- Three lines: build-logic, clkx-settings, root name
+├── settings.gradle.kts          <- build-logic (named wrkx-build-logic), clkx-settings, root name
 ├── gradle.properties            <- Version, Maven coordinates, POM metadata
 └── install.sh                   <- Global installer via Gradle init script
 ```
