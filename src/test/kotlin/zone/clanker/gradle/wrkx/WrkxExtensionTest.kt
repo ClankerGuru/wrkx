@@ -355,6 +355,56 @@ class WrkxExtensionTest :
             }
         }
 
+        given("includeRepo idempotency") {
+
+            `when`("includeRepo is called twice for the same repo") {
+                val settings = mockk<Settings>(relaxed = true)
+                val ext = objects.newInstance(Wrkx.SettingsExtension::class.java, settings)
+                val tmpDir =
+                    File.createTempFile("wrkx-idem", "").apply {
+                        delete()
+                        mkdirs()
+                        deleteOnExit()
+                    }
+
+                ext.repos.register("lib") { repo ->
+                    repo.path.set(RepositoryUrl("org/lib"))
+                    repo.clonePath.set(tmpDir)
+                    repo.substitute.set(false)
+                }
+
+                val repo = ext.repos.getByName("lib")
+
+                then("calls settings.includeBuild exactly once") {
+                    ext.includeRepo(repo)
+                    ext.includeRepo(repo)
+                    verify(exactly = 1) { settings.includeBuild(tmpDir.canonicalFile, any()) }
+                }
+
+                tmpDir.deleteRecursively()
+            }
+        }
+
+        given("includeRepo early return") {
+
+            `when`("clonePath is not set") {
+                val settings = mockk<Settings>(relaxed = true)
+                val ext = objects.newInstance(Wrkx.SettingsExtension::class.java, settings)
+
+                ext.repos.register("lib") { repo ->
+                    repo.path.set(RepositoryUrl("org/lib"))
+                    repo.substitute.set(false)
+                }
+
+                val repo = ext.repos.getByName("lib")
+
+                then("does not call settings.includeBuild") {
+                    ext.includeRepo(repo)
+                    verify(exactly = 0) { settings.includeBuild(any<File>(), any()) }
+                }
+            }
+        }
+
         given("repos container factory") {
 
             `when`("a repo is registered via the container") {
