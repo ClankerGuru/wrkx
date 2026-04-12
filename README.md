@@ -1,7 +1,7 @@
 # wrkx
 
 [![Build](https://github.com/ClankerGuru/wrkx/actions/workflows/build.yml/badge.svg)](https://github.com/ClankerGuru/wrkx/actions/workflows/build.yml)
-[![Gradle Plugin](https://img.shields.io/badge/Gradle%20Plugin-0.40.0-blue)](https://github.com/ClankerGuru/wrkx)
+[![Maven Central](https://img.shields.io/maven-central/v/zone.clanker/plugin-wrkx?label=Maven%20Central)](https://central.sonatype.com/artifact/zone.clanker/plugin-wrkx)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-purple)](https://kotlinlang.org)
 [![Gradle](https://img.shields.io/badge/Gradle-9.4.1-green)](https://gradle.org)
 [![Coverage](https://img.shields.io/badge/Coverage-%E2%89%A595%25-brightgreen)](https://github.com/ClankerGuru/wrkx)
