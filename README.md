@@ -151,11 +151,11 @@ wrkx {
 | `disableAll()` | Disable all repos (does not remove already-included builds) |
 | `enable(vararg repos)` | Enable specific repos and include them as composite builds |
 | `this["name"]` | Access a repo by name for per-repo configuration |
-| `workingBranch = "branch"` | Set working branch for `wrkx-checkout` |
+| `workingBranch = "branch"` | Select the branch for checkout and branch-scoped included builds |
 
 ### How enablement works
 
-The plugin reads `wrkx.json` and registers all repos, but **does not include any as composite builds** until you enable them in the DSL. Calling `enable()` or `enableAll()` immediately wires the repo via `settings.includeBuild()` during settings evaluation. Tasks (clone, pull, checkout) work for all repos regardless of enablement.
+The plugin reads `wrkx.json` and registers all repos, but **does not include any as composite builds** until you enable them in the DSL. Enabled repositories are wired after the settings DSL finishes, ensuring branch selection is resolved first. Tasks work for all repos regardless of enablement.
 
 If no `wrkx { }` block is present, no repos are included as composite builds. You must be explicit.
 
@@ -200,6 +200,8 @@ wrkx {
 | `wrkx-pull-<name>` | Pull baseBranch for a single repo |
 | `wrkx-checkout` | Checkout workingBranch (or baseBranch) across all repos |
 | `wrkx-checkout-<name>` | Checkout workingBranch (or baseBranch) for a single repo |
+| `wrkx-worktree` | Create bare repositories and branch-scoped worktrees |
+| `wrkx-worktree-<name>` | Create a branch-scoped worktree for a single repo |
 | `wrkx-status` | Generate workspace status report at `.wrkx/repos.md` |
 | `wrkx-prune` | Remove repo directories not defined in wrkx.json |
 
@@ -208,18 +210,46 @@ wrkx {
 ./gradlew wrkx-clone-gort      # clone just gort
 ./gradlew wrkx-pull            # pull baseBranch for all repos
 ./gradlew wrkx-checkout        # checkout workingBranch or baseBranch
+./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
 ./gradlew wrkx-status          # generate workspace status report
 ./gradlew wrkx-prune           # remove orphaned repo directories
 ```
 
 ### Parallel execution
 
-Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`) run git operations across all repos in parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any repo fails.
+Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`, `wrkx-worktree`) run git operations across all repos in
+parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any
+repo fails.
 
 ### Checkout behavior
 
 - **With `workingBranch` set**: creates/checks out that branch from `baseBranch` in all enabled repos. Fails if working directory is dirty -- commit or stash first.
 - **Without `workingBranch`**: checks out each repo's `baseBranch`.
+
+### Branch worktrees
+
+Set `workingBranch` in the DSL or pass `-Pwrkx.branch=<branch>`, then create the worktrees before building:
+
+```bash
+./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
+./gradlew build -Pwrkx.branch=feature/new-catalog
+```
+
+Repositories are cloned once as bare repositories under `bare/`. Worktrees for each branch are grouped under
+`branches/<branch>/`, and enabled Gradle builds are included from that branch directory.
+
+```text
+my-workspace-repos/
+├── bare/
+│   ├── checkout-ui.git/
+│   └── shared-models.git/
+└── branches/
+    └── feature%2Fnew-catalog/
+        ├── checkout-ui/
+        └── shared-models/
+```
+
+Worktrees must be created in a separate invocation because Gradle selects included builds before tasks execute.
 
 ### Pull behavior
 
@@ -231,7 +261,7 @@ Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`) run git operations 
 1. Plugin reads `wrkx.json` at settings evaluation time
 2. All repos are registered in a container (tasks work for all)
 3. DSL runs: you enable/disable repos, set workingBranch
-4. `enable()` / `enableAll()` immediately call `settings.includeBuild()` during settings evaluation -- this ensures IntelliJ IDE sync can resolve the project model correctly
+4. After the DSL finishes, enabled repositories are passed to `settings.includeBuild()` using the selected branch path
 5. Symlinked repo directories are resolved to their canonical paths before inclusion (works around [IDEA-329756](https://youtrack.jetbrains.com/issue/IDEA-329756))
 6. Missing repo directories are warned, not failed -- so `wrkx-clone` works on fresh checkouts
 7. Inclusion is idempotent -- calling `enable()` on the same repo twice is safe
@@ -276,6 +306,7 @@ Track the upstream fix at [KT-52172](https://youtrack.jetbrains.com/issue/KT-521
 | Property | Default | Description |
 |----------|---------|-------------|
 | `zone.clanker.wrkx.enabled` | `true` | Disable the plugin entirely |
+| `wrkx.branch` | DSL `workingBranch` | Select the branch worktree used by included builds |
 
 ## Install globally
 

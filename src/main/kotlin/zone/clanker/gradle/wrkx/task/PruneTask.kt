@@ -56,7 +56,7 @@ abstract class PruneTask
                 """.trimIndent()
             }
 
-            val knownDirectoryNames = repos.map { it.directoryName }.toSet()
+            val knownDirectoryNames = repos.map { it.directoryName }.toSet() + setOf("bare", "branches")
 
             val dirsOnDisk =
                 repoDir
