@@ -56,6 +56,8 @@ class PruneTaskTest :
                 val repoDir = tempDir()
                 File(repoDir, "lib-a").mkdirs()
                 File(repoDir, "lib-b").mkdirs()
+                File(repoDir, "bare").mkdirs()
+                File(repoDir, "branches").mkdirs()
                 val orphan = File(repoDir, "old-repo").apply { mkdirs() }
 
                 val container = createContainer("libA", "libB")
@@ -77,6 +79,8 @@ class PruneTaskTest :
                 then("known directories are preserved") {
                     File(repoDir, "lib-a").shouldExist()
                     File(repoDir, "lib-b").shouldExist()
+                    File(repoDir, "bare").shouldExist()
+                    File(repoDir, "branches").shouldExist()
                 }
 
                 repoDir.deleteRecursively()

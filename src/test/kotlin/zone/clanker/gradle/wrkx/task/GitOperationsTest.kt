@@ -6,6 +6,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
 import org.gradle.testfixtures.ProjectBuilder
+import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import java.io.File
 
 /**
@@ -202,6 +203,54 @@ class GitOperationsTest :
                 then("skips with no-remote message") {
                     result shouldStartWith "SKIP"
                     result shouldContain "no remote"
+                }
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("createWorktree with a local bare remote") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "worktree-ops")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath)
+
+            `when`("two branch worktrees are created") {
+                val first = GitOperations.createWorktree(repo, repoDir, "feature/alpha")
+                val second = GitOperations.createWorktree(repo, repoDir, "feature/beta")
+
+                then("one bare repository backs both worktrees") {
+                    first shouldStartWith "OK"
+                    second shouldStartWith "OK"
+                    WorkspaceLayout.bareRepository(repoDir, repo).resolve("HEAD").shouldExist()
+                    WorkspaceLayout.worktree(repoDir, "feature/alpha", repo).resolve("README.md").shouldExist()
+                    WorkspaceLayout.worktree(repoDir, "feature/beta", repo).resolve("README.md").shouldExist()
+                }
+
+                then("each worktree checks out its requested branch") {
+                    gitOutput(
+                        "git",
+                        "-C",
+                        WorkspaceLayout.worktree(repoDir, "feature/alpha", repo).absolutePath,
+                        "branch",
+                        "--show-current",
+                    ) shouldBe "feature/alpha"
+                    gitOutput(
+                        "git",
+                        "-C",
+                        WorkspaceLayout.worktree(repoDir, "feature/beta", repo).absolutePath,
+                        "branch",
+                        "--show-current",
+                    ) shouldBe "feature/beta"
+                }
+            }
+
+            `when`("an existing worktree is requested again") {
+                val result = GitOperations.createWorktree(repo, repoDir, "feature/alpha")
+
+                then("it is skipped") {
+                    result shouldStartWith "SKIP"
                 }
             }
 
