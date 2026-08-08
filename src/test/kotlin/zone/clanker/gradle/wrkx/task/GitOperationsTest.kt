@@ -246,7 +246,18 @@ class GitOperationsTest :
                 }
             }
 
-            `when`("an existing worktree is requested again") {
+            baseDir.deleteRecursively()
+        }
+
+        given("an existing worktree") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "existing-worktree")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath)
+            GitOperations.createWorktree(repo, repoDir, "feature/alpha") shouldStartWith "OK"
+
+            `when`("the same worktree is requested again") {
                 val result = GitOperations.createWorktree(repo, repoDir, "feature/alpha")
 
                 then("it is skipped") {

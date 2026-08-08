@@ -217,7 +217,9 @@ wrkx {
 
 ### Parallel execution
 
-Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`) run git operations across all repos in parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any repo fails.
+Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`, `wrkx-worktree`) run git operations across all repos in
+parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any
+repo fails.
 
 ### Checkout behavior
 
