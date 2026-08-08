@@ -176,6 +176,19 @@ class WrkxExtensionTest :
                     ext.workingBranch shouldBe "feature/test"
                 }
             }
+
+            `when`("a working branch and base directory are set") {
+                val ext = createExtension()
+                val baseDir = File("/workspace/repos")
+                ext.baseDir.set(baseDir)
+                ext.workingBranch = "feature/test"
+                ext.addRepo("gort", "org/gort", File(baseDir, "gort"))
+
+                then("checkoutPath resolves the branch worktree") {
+                    ext.checkoutPath(ext["gort"]) shouldBe
+                        File(baseDir, "branches/feature%2Ftest/gort")
+                }
+            }
         }
 
         given("checkForDuplicateBuildNames") {

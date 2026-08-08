@@ -1,6 +1,7 @@
 package zone.clanker.gradle.wrkx.task
 
 import org.gradle.api.logging.Logging
+import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
 import java.util.concurrent.Callable
@@ -52,6 +53,95 @@ internal object GitOperations {
         if (cloneResult != 0) return "FAIL ${repo.repoName}: git clone exit $cloneResult"
         return checkoutBaseBranch(repo, target)
     }
+
+    fun createWorktree(
+        repo: WorkspaceRepository,
+        repoDir: File,
+        workingBranch: String,
+    ): String {
+        require(workingBranch.isNotBlank()) { "wrkx: A working branch is required to create worktrees." }
+        val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+        val cloneResult = ensureBareRepository(repo, bareDir)
+        val fetchResult =
+            if (cloneResult == null) {
+                exec("git", "--git-dir=${bareDir.absolutePath}", "fetch", "origin", "--prune")
+            } else {
+                -1
+            }
+        val target = WorkspaceLayout.worktree(repoDir, workingBranch, repo)
+        return when {
+            cloneResult != null -> cloneResult
+            fetchResult != 0 -> "FAIL ${repo.repoName}: fetch exit $fetchResult"
+            target.exists() -> "SKIP ${repo.repoName} — worktree already exists"
+            else -> {
+                target.parentFile?.mkdirs()
+                exec("git", "--git-dir=${bareDir.absolutePath}", "worktree", "prune")
+                addWorktree(repo, bareDir, target, workingBranch)
+            }
+        }
+    }
+
+    private fun ensureBareRepository(
+        repo: WorkspaceRepository,
+        bareDir: File,
+    ): String? {
+        if (bareDir.exists()) return null
+        bareDir.parentFile?.mkdirs()
+        val result = exec("git", "clone", "--bare", repo.path.get().value, bareDir.absolutePath)
+        if (result != 0) return "FAIL ${repo.repoName}: bare clone exit $result"
+        val refspec = "+refs/heads/*:refs/remotes/origin/*"
+        val configResult =
+            exec("git", "--git-dir=${bareDir.absolutePath}", "config", "remote.origin.fetch", refspec)
+        return if (configResult == 0) null else "FAIL ${repo.repoName}: remote configuration exit $configResult"
+    }
+
+    private fun addWorktree(
+        repo: WorkspaceRepository,
+        bareDir: File,
+        target: File,
+        branch: String,
+    ): String {
+        val localBranch = "refs/heads/$branch"
+        val remoteBranch = "refs/remotes/origin/$branch"
+        val base = repo.baseBranch.get().value
+        val startPoint =
+            when {
+                refExists(bareDir, remoteBranch) -> "origin/$branch"
+                refExists(bareDir, "refs/remotes/origin/$base") -> "origin/$base"
+                refExists(bareDir, "refs/heads/$base") -> base
+                else -> return "FAIL ${repo.repoName}: baseBranch '$base' not found"
+            }
+        val command =
+            if (refExists(bareDir, localBranch)) {
+                arrayOf("git", "--git-dir=${bareDir.absolutePath}", "worktree", "add", target.absolutePath, branch)
+            } else {
+                arrayOf(
+                    "git",
+                    "--git-dir=${bareDir.absolutePath}",
+                    "worktree",
+                    "add",
+                    "-b",
+                    branch,
+                    target.absolutePath,
+                    startPoint,
+                )
+            }
+        val result = exec(*command)
+        return if (result == 0) "OK ${repo.repoName}" else "FAIL ${repo.repoName}: worktree add exit $result"
+    }
+
+    private fun refExists(
+        bareDir: File,
+        reference: String,
+    ): Boolean =
+        exec(
+            "git",
+            "--git-dir=${bareDir.absolutePath}",
+            "show-ref",
+            "--verify",
+            "--quiet",
+            reference,
+        ) == 0
 
     private fun checkoutBaseBranch(repo: WorkspaceRepository, target: File): String {
         val branch = repo.baseBranch.get().value
