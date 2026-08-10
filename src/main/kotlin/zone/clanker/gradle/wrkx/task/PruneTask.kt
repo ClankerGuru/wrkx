@@ -32,6 +32,7 @@ abstract class PruneTask
     constructor(
         private val repos: NamedDomainObjectContainer<WorkspaceRepository>,
         private val repoDir: File,
+        private val workspaceRootNames: Set<String>,
     ) : DefaultTask() {
         init {
             group = Wrkx.GROUP
@@ -56,7 +57,7 @@ abstract class PruneTask
                 """.trimIndent()
             }
 
-            val knownDirectoryNames = repos.map { it.directoryName }.toSet() + setOf("bare", "branches")
+            val knownDirectoryNames = repos.map { it.directoryName }.toSet() + workspaceRootNames
 
             val dirsOnDisk =
                 repoDir

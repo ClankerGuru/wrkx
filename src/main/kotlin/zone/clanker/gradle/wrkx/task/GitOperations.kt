@@ -58,8 +58,10 @@ internal object GitOperations {
         repo: WorkspaceRepository,
         repoDir: File,
         workingBranch: String,
+        allowedPrefixes: Set<String> = WorkspaceLayout.defaultBranchPrefixes,
     ): String {
         require(workingBranch.isNotBlank()) { "wrkx: A working branch is required to create worktrees." }
+        val target = WorkspaceLayout.worktree(repoDir, workingBranch, repo, allowedPrefixes)
         val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
         val cloneResult = ensureBareRepository(repo, bareDir)
         val fetchResult =
@@ -68,7 +70,6 @@ internal object GitOperations {
             } else {
                 -1
             }
-        val target = WorkspaceLayout.worktree(repoDir, workingBranch, repo)
         return when {
             cloneResult != null -> cloneResult
             fetchResult != 0 -> "FAIL ${repo.repoName}: fetch exit $fetchResult"
