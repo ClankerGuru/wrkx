@@ -1,7 +1,9 @@
 package zone.clanker.gradle.wrkx.task
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.file.shouldExist
+import io.kotest.matchers.file.shouldNotExist
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
@@ -263,6 +265,48 @@ class GitOperationsTest :
                 then("it is skipped") {
                     result shouldStartWith "SKIP"
                 }
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("a custom branch prefix") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "custom-prefix")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath)
+
+            `when`("the prefix is explicitly allowed") {
+                val result =
+                    GitOperations.createWorktree(
+                        repo,
+                        repoDir,
+                        "experiment/new-renderer",
+                        WorkspaceLayout.defaultBranchPrefixes + "experiment",
+                    )
+
+                then("the worktree is created in the custom prefix directory") {
+                    result shouldStartWith "OK"
+                    File(repoDir, "experiment/new-renderer/custom-prefix").shouldExist()
+                }
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("an invalid branch name") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "invalid-branch")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath)
+
+            then("it is rejected before a bare repository is cloned") {
+                shouldThrow<IllegalArgumentException> {
+                    GitOperations.createWorktree(repo, repoDir, "unknown/new-renderer")
+                }
+                WorkspaceLayout.bareRepository(repoDir, repo).shouldNotExist()
             }
 
             baseDir.deleteRecursively()
