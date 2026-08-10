@@ -1,6 +1,7 @@
 package zone.clanker.gradle.wrkx.report
 
 import zone.clanker.gradle.wrkx.Wrkx
+import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
 
@@ -70,7 +71,7 @@ internal class ReposCatalogRenderer(
     }
 
     private fun isCloned(repo: WorkspaceRepository): Boolean =
-        File(repoDir, repo.directoryName).exists()
+        WorkspaceLayout.bareRepository(repoDir, repo).exists()
 
     private fun StringBuilder.appendSummaryRows(
         grouped: Map<String, List<WorkspaceRepository>>,

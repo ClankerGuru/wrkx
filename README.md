@@ -195,8 +195,8 @@ wrkx {
 | Task | Description |
 |------|-------------|
 | `wrkx` | List all available workspace tasks |
-| `wrkx-clone` | Clone all repos defined in wrkx.json |
-| `wrkx-clone-<name>` | Clone a single repo from its remote |
+| `wrkx-clone` | Run `git clone --bare` under `workspace-repos/bare` for every repo; fetch existing bare repos |
+| `wrkx-clone-<name>` | Create or update one bare repo under `workspace-repos/bare` |
 | `wrkx-pull` | Pull baseBranch for all repos from their remotes |
 | `wrkx-pull-<name>` | Pull baseBranch for a single repo |
 | `wrkx-checkout` | Checkout workingBranch (or baseBranch) across all repos |
@@ -207,8 +207,8 @@ wrkx {
 | `wrkx-prune` | Remove repo directories not defined in wrkx.json |
 
 ```bash
-./gradlew wrkx-clone           # clone all repos
-./gradlew wrkx-clone-gort      # clone just gort
+./gradlew wrkx-clone           # clone --bare all repos, or fetch existing bare repos
+./gradlew wrkx-clone-gort      # clone --bare just gort, or fetch it when present
 ./gradlew wrkx-pull            # pull baseBranch for all repos
 ./gradlew wrkx-checkout        # checkout workingBranch or baseBranch
 ./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
@@ -283,7 +283,7 @@ separate invocation because Gradle selects included builds before tasks execute.
 6. Missing repo directories are warned, not failed -- so `wrkx-clone` works on fresh checkouts
 7. Inclusion is idempotent -- calling `enable()` on the same repo twice is safe
 
-Repos are cloned to a sibling directory:
+Bare repositories and branch worktrees are stored in a sibling directory; the Gradle workspace remains separate:
 
 ```text
 ~/dev/
@@ -291,10 +291,16 @@ Repos are cloned to a sibling directory:
 │   ├── settings.gradle.kts
 │   ├── build.gradle.kts
 │   └── wrkx.json
-└── my-workspace-repos/      <- repos cloned here by wrkx-clone
-    ├── checkout-ui/
-    ├── shared-models/
-    └── host-app/
+└── my-workspace-repos/
+    ├── bare/                <- created and updated by wrkx-clone
+    │   ├── checkout-ui.git/
+    │   ├── shared-models.git/
+    │   └── host-app.git/
+    └── feature/
+        └── checkout-flow/   <- created by wrkx-worktree
+            ├── checkout-ui/
+            ├── shared-models/
+            └── host-app/
 ```
 
 ## Known issues

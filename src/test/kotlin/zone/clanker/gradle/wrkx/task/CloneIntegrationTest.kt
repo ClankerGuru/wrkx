@@ -112,10 +112,8 @@ class CloneIntegrationTest :
         given("a Gitea server with two repositories") {
 
             /**
-             * CLONE: Verifies that wrkx-clone fetches a repository from the remote
-             * and places it in the repos directory with the correct directory name
-             * derived from the path URL. The .git directory must exist, proving
-             * it's a valid Git checkout.
+             * CLONE: Verifies that wrkx-clone creates a bare repository under bare/
+             * and never creates a normal working checkout.
              */
             `when`("wrkx-clone is run with one repo in wrkx.json") {
                 val projectDir =
@@ -132,10 +130,23 @@ class CloneIntegrationTest :
                     result.task(":wrkx-clone")?.outcome shouldBe TaskOutcome.SUCCESS
                 }
 
-                then("the repo directory exists with a .git folder") {
-                    val clonedRepo = File(reposDir, "test-repo")
-                    clonedRepo.shouldExist()
-                    File(clonedRepo, ".git").shouldExist()
+                then("only a valid bare repository exists") {
+                    val bareRepo = File(reposDir, "bare/test-repo.git")
+                    bareRepo.shouldExist()
+                    File(reposDir, "test-repo").shouldNotExist()
+                    val process =
+                        ProcessBuilder(
+                            "git",
+                            "--git-dir=${bareRepo.absolutePath}",
+                            "rev-parse",
+                            "--is-bare-repository",
+                        ).redirectErrorStream(true)
+                            .start()
+                    process.inputStream
+                        .bufferedReader()
+                        .readText()
+                        .trim() shouldBe "true"
+                    process.waitFor() shouldBe 0
                 }
 
                 projectDir.deleteRecursively()
@@ -143,8 +154,8 @@ class CloneIntegrationTest :
             }
 
             /**
-             * CLONE SKIP: Verifies that if a repo already exists on disk,
-             * wrkx-clone skips it without error.
+             * CLONE UPDATE: Verifies that an existing bare repository is fetched
+             * without creating a normal checkout.
              */
             `when`("wrkx-clone is run twice") {
                 val projectDir =
@@ -158,8 +169,10 @@ class CloneIntegrationTest :
                 gradle(projectDir, "wrkx-clone")
                 val result = gradle(projectDir, "wrkx-clone")
 
-                then("the second run succeeds (skips existing)") {
+                then("the second run succeeds and keeps the bare-only layout") {
                     result.task(":wrkx-clone")?.outcome shouldBe TaskOutcome.SUCCESS
+                    File(reposDir, "bare/test-repo.git").shouldExist()
+                    File(reposDir, "test-repo").shouldNotExist()
                 }
 
                 projectDir.deleteRecursively()
