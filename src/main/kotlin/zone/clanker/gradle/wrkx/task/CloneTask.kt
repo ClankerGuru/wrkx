@@ -18,7 +18,9 @@ abstract class CloneTask
         init {
             group = Wrkx.GROUP
             description =
-                "Run git clone --bare for ${repo.repoName} under workspace-repos/bare, or fetch it when it exists"
+                "Create ${repo.repoName}'s shared bare repository under <workspace>-repos/bare " +
+                "or fetch/prune it when " +
+                "present; does not create, switch, merge, or delete worktrees"
         }
 
         /** Run `git clone --bare` when missing, otherwise fetch and prune the existing bare repository. */

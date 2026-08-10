@@ -1,30 +1,14 @@
 package zone.clanker.gradle.wrkx.task
 
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
-import io.kotest.matchers.file.shouldExist
 import io.kotest.matchers.file.shouldNotExist
-import io.kotest.matchers.string.shouldContain
-import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.testfixtures.ProjectBuilder
-import zone.clanker.gradle.wrkx.model.GitReference
-import zone.clanker.gradle.wrkx.model.RepositoryUrl
 import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
 
-/**
- * Tests for [PruneTask] -- removes directories not in wrkx.json.
- *
- * Verifies:
- * - Orphaned directories are removed
- * - Known directories are preserved
- * - Empty repos directory succeeds with no-op
- * - Missing repos directory fails with clear error
- */
 class PruneTaskTest :
     BehaviorSpec({
-
         fun tempDir(): File =
             File.createTempFile("wrkx-prune", "").apply {
                 delete()
@@ -32,145 +16,90 @@ class PruneTaskTest :
                 deleteOnExit()
             }
 
-        fun createContainer(
-            vararg names: String,
-        ): NamedDomainObjectContainer<WorkspaceRepository> {
+        given("a clean merged worktree whose observed remote branch was deleted") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "prune-task")
+            val repoDir = File(baseDir, "repos")
             val project = ProjectBuilder.builder().build()
-            val container =
-                project.objects.domainObjectContainer(WorkspaceRepository::class.java) { name ->
-                    project.objects.newInstance(WorkspaceRepository::class.java, name)
-                }
-            names.forEach { name ->
-                container.register(name) { repo ->
-                    repo.path.set(RepositoryUrl("org/$name"))
-                    repo.category.set("")
-                    repo.substitute.set(false)
-                    repo.baseBranch.set(GitReference("main"))
+            val repo = createTestRepo(project.objects, remote.absolutePath)
+            val branch = "feature/prune-task"
+            GitOperations.createWorktree(repo, repoDir, branch)
+            val worktree = WorkspaceLayout.worktree(repoDir, branch, repo)
+            File(worktree, "feature.txt").writeText("merged")
+            git(worktree, "add", ".")
+            git(worktree, "commit", "-m", "Feature")
+            git(worktree, "push", "-u", "origin", branch)
+            GitOperations.fetchRepo(repo, repoDir)
+            mergeAndDeleteRemoteBranch(baseDir, remote, branch)
+
+            `when`("the prune task runs") {
+                val repos = container(project, repo)
+                project.tasks
+                    .register(
+                        "wrkx-prune-test",
+                        PruneTask::class.java,
+                        repos,
+                        repoDir,
+                        WorkspaceLayout.defaultBranchPrefixes,
+                    ).get()
+                    .prune()
+
+                then("it removes the worktree") {
+                    worktree.shouldNotExist()
                 }
             }
-            return container
+
+            baseDir.deleteRecursively()
         }
 
-        val workspaceRoots =
-            WorkspaceLayout.defaultBranchPrefixes + WorkspaceLayout.standaloneBranches + setOf("bare", "experiment")
+        given("a missing repository directory") {
+            val baseDir = tempDir()
+            val repoDir = File(baseDir, "missing")
+            val project = ProjectBuilder.builder().build()
+            val repos = project.objects.domainObjectContainer(WorkspaceRepository::class.java)
 
-        given("repos directory with matching and orphaned directories") {
+            `when`("prune runs") {
+                project.tasks
+                    .register(
+                        "wrkx-prune-empty",
+                        PruneTask::class.java,
+                        repos,
+                        repoDir,
+                        WorkspaceLayout.defaultBranchPrefixes,
+                    ).get()
+                    .prune()
 
-            `when`("prune is executed") {
-                val repoDir = tempDir()
-                File(repoDir, "lib-a").mkdirs()
-                File(repoDir, "lib-b").mkdirs()
-                workspaceRoots.forEach { File(repoDir, it).mkdirs() }
-                val oldLayout = File(repoDir, "branches").apply { mkdirs() }
-                val orphan = File(repoDir, "old-repo").apply { mkdirs() }
-
-                val container = createContainer("libA", "libB")
-                // Register with matching directory names
-                container.getByName("libA").path.set(RepositoryUrl("org/lib-a"))
-                container.getByName("libB").path.set(RepositoryUrl("org/lib-b"))
-
-                val project = ProjectBuilder.builder().build()
-                val task =
-                    project.tasks
-                        .register("wrkx-prune", PruneTask::class.java, container, repoDir, workspaceRoots)
-                        .get()
-                task.prune()
-
-                then("orphan directory is removed") {
-                    orphan.shouldNotExist()
-                    oldLayout.shouldNotExist()
-                }
-
-                then("known directories are preserved") {
-                    File(repoDir, "lib-a").shouldExist()
-                    File(repoDir, "lib-b").shouldExist()
-                    workspaceRoots.forEach { File(repoDir, it).shouldExist() }
-                }
-
-                repoDir.deleteRecursively()
-            }
-        }
-
-        given("repos directory with no orphans") {
-
-            `when`("prune is executed") {
-                val repoDir = tempDir()
-                File(repoDir, "lib-a").mkdirs()
-
-                val container = createContainer("libA")
-                container.getByName("libA").path.set(RepositoryUrl("org/lib-a"))
-
-                val project = ProjectBuilder.builder().build()
-                val task =
-                    project.tasks
-                        .register("wrkx-prune-noop", PruneTask::class.java, container, repoDir, workspaceRoots)
-                        .get()
-                task.prune()
-
-                then("all directories are preserved") {
-                    File(repoDir, "lib-a").shouldExist()
-                }
-
-                repoDir.deleteRecursively()
-            }
-        }
-
-        given("repos directory is a file (listFiles returns null)") {
-
-            `when`("prune is executed") {
-                val baseDir = tempDir()
-                val repoFile = File(baseDir, "repos-file")
-                repoFile.writeText("not a directory")
-
-                val container = createContainer("libA")
-                container.getByName("libA").path.set(RepositoryUrl("org/lib-a"))
-
-                val project = ProjectBuilder.builder().build()
-
-                then("handles null listFiles gracefully") {
-                    // repoFile.exists() is true but listFiles() returns null because
-                    // it's a file not a directory -- tests the ?: emptyList() branch
-                    val task =
-                        project.tasks
-                            .register(
-                                "wrkx-prune-file",
-                                PruneTask::class.java,
-                                container,
-                                repoFile,
-                                workspaceRoots,
-                            ).get()
-                    task.prune()
-                    repoFile.shouldExist()
-                }
-
-                baseDir.deleteRecursively()
-            }
-        }
-
-        given("repos directory that doesn't exist") {
-
-            `when`("prune is executed") {
-                val repoDir = File("/tmp/wrkx-nonexistent-${System.nanoTime()}")
-                val container = createContainer("libA")
-
-                then("fails with descriptive error") {
-                    val project = ProjectBuilder.builder().build()
-                    val ex =
-                        shouldThrow<IllegalStateException> {
-                            val task =
-                                project.tasks
-                                    .register(
-                                        "wrkx-prune-missing",
-                                        PruneTask::class.java,
-                                        container,
-                                        repoDir,
-                                        workspaceRoots,
-                                    ).get()
-                            task.prune()
-                        }
-                    ex.message shouldContain "does not exist"
-                    ex.message shouldContain "wrkx-clone"
+                then("it completes without creating the directory") {
+                    repoDir.shouldNotExist()
                 }
             }
+
+            baseDir.deleteRecursively()
         }
     })
+
+private fun container(
+    project: org.gradle.api.Project,
+    repo: WorkspaceRepository,
+) =
+    project.objects.domainObjectContainer(WorkspaceRepository::class.java).apply {
+        add(repo)
+    }
+
+private fun mergeAndDeleteRemoteBranch(baseDir: File, remote: File, branch: String) {
+    val integration = File(baseDir, "integration")
+    process("git", "clone", remote.absolutePath, integration.absolutePath)
+    git(integration, "merge", "--no-edit", "origin/$branch")
+    git(integration, "push", "origin", "main")
+    git(integration, "push", "origin", "--delete", branch)
+}
+
+private fun git(directory: File, vararg args: String) {
+    process("git", "-C", directory.absolutePath, *args)
+}
+
+private fun process(vararg command: String) {
+    val process = ProcessBuilder(*command).redirectErrorStream(true).start()
+    val output = process.inputStream.bufferedReader().readText()
+    check(process.waitFor() == 0) { "${command.joinToString(" ")} failed:\n$output" }
+}

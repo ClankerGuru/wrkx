@@ -258,7 +258,7 @@ class WrkxSettingsPluginTest :
                       {
                         "name": "wrkx",
                         "path": "git@github.com:ClankerGuru/wrkx.git",
-                        "category": "tooling",
+                        "categories": ["tooling", "shared"],
                         "substitute": true,
                         "substitutions": ["com.example:wrkx,wrkx"]
                       }
@@ -278,12 +278,15 @@ class WrkxSettingsPluginTest :
                     val gort = ext.repos.getByName("gort")
                     gort.path.get().value shouldBe "git@github.com:ClankerGuru/gort.git"
                     gort.category.get() shouldBe "ui"
+                    @Suppress("DEPRECATION")
+                    gort.category.set("design-system")
+                    gort.effectiveCategories shouldBe listOf("design-system")
                     gort.baseBranch.get().value shouldBe "develop"
                     gort.substitute.get().shouldBeFalse()
 
                     val wrkx = ext.repos.getByName("wrkx")
                     wrkx.path.get().value shouldBe "git@github.com:ClankerGuru/wrkx.git"
-                    wrkx.category.get() shouldBe "tooling"
+                    wrkx.categories.get() shouldBe listOf("tooling", "shared")
                     wrkx.substitute.get().shouldBeTrue()
                     wrkx.substitutions.get() shouldHaveSize 1
 
@@ -425,8 +428,8 @@ class WrkxSettingsPluginTest :
                     project.tasks.findByName(Wrkx.TASK_CHECKOUT).shouldNotBeNull()
 
                     project.tasks.findByName(Wrkx.TASK_CLONE)!!.group shouldBe Wrkx.GROUP
-                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "git clone --bare"
-                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "workspace-repos/bare"
+                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "shared bare repositories"
+                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "<workspace>-repos/bare"
                     project.tasks.findByName(Wrkx.TASK_PULL)!!.group shouldBe Wrkx.GROUP
                     project.tasks.findByName(Wrkx.TASK_CHECKOUT)!!.group shouldBe Wrkx.GROUP
                 }
@@ -502,7 +505,9 @@ class WrkxSettingsPluginTest :
                         project.registerPerRepoTasks(ext, tmpDir)
                     }
                     project.tasks.findByName("${Wrkx.TASK_CLONE}-gort").shouldNotBeNull()
-                    project.tasks.findByName("${Wrkx.TASK_CLONE}-gort")!!.description shouldContain "git clone --bare"
+                    project.tasks
+                        .findByName("${Wrkx.TASK_CLONE}-gort")!!
+                        .description shouldContain "shared bare repository"
                     project.tasks.findByName("${Wrkx.TASK_PULL}-gort").shouldNotBeNull()
                     project.tasks.findByName("${Wrkx.TASK_CHECKOUT}-gort").shouldNotBeNull()
                 }

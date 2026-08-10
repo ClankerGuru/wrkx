@@ -82,6 +82,17 @@ class RepositoryEntryTest :
             }
         }
 
+        given("canonical and legacy categories") {
+            then("combines categories while preserving order and removing duplicates") {
+                val entry =
+                    json.decodeFromString<RepositoryEntry>(
+                        """{"name":"app","path":"org/app","categories":["checkout","shared"],"category":"shared"}""",
+                    )
+
+                entry.effectiveCategories shouldBe listOf("checkout", "shared")
+            }
+        }
+
         given("substitutions-heavy.json") {
             val entries = parse("substitutions-heavy.json")
 
