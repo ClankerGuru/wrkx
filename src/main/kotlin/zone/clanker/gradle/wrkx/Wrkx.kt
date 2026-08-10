@@ -438,7 +438,7 @@ data object Wrkx {
                         |Workspace Tasks ($GROUP)
                         |${"=".repeat(CATALOG_DIVIDER_LENGTH)}
                         |
-                        |  $TASK_CLONE       Clone all repos defined in $CONFIG_FILE
+                        |  $TASK_CLONE       Clone --bare into workspace-repos/bare (fetch existing repos)
                         |  $TASK_PULL        Pull baseBranch for all repos from their remotes
                         |  $TASK_CHECKOUT    Checkout workingBranch (or baseBranch) across all repos
                         |  $TASK_WORKTREE    Create bare repos and worktrees for the active branch
@@ -492,7 +492,8 @@ data object Wrkx {
 
                 tasks.register(TASK_CLONE).configure { task ->
                     task.group = GROUP
-                    task.description = "Clone all repos defined in $CONFIG_FILE"
+                    task.description =
+                        "Run git clone --bare into workspace-repos/bare for every repo, fetching existing bare repos"
                     task.doLast {
                         GitOperations.runParallel(repos.toList(), "clone") { repo ->
                             GitOperations.cloneRepo(repo, repoDir)

@@ -18,8 +18,8 @@ import java.io.File
  *
  * Verifies:
  * - cloneRepo clones from a local bare repo
- * - cloneRepo skips when target directory already exists
- * - cloneRepo checks out a non-default baseBranch after cloning
+ * - cloneRepo fetches when the bare target already exists
+ * - cloneRepo never creates or checks out a working tree
  * - pullRepo fetches new commits from the bare repo
  * - pullRepo skips when no remote is configured
  * - pullRepo skips when directory is not cloned
@@ -61,90 +61,63 @@ class GitOperationsTest :
                     out
                 }
 
-        given("cloneRepo with a local bare git repo") {
+        given("cloneRepo with a repository that has not been cloned") {
             val baseDir = tempDir()
-            val bareRepo = createBareRepo(baseDir, "clone-ops")
+            val remote = createBareRepo(baseDir, "clone-ops")
             val repoDir = File(baseDir, "repos").apply { mkdirs() }
             val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath)
 
-            `when`("the target directory does not exist") {
-                val repo = createTestRepo(project.objects, bareRepo.absolutePath)
+            `when`("cloneRepo runs") {
                 val result = GitOperations.cloneRepo(repo, repoDir)
 
-                then("clones the repo and returns OK") {
+                then("it creates only a bare repository and returns OK") {
                     result shouldStartWith "OK"
-                    File(repoDir, "clone-ops").shouldExist()
-                    File(repoDir, "clone-ops/.git").shouldExist()
-                    File(repoDir, "clone-ops/README.md").shouldExist()
+                    val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+                    bareDir.shouldExist()
+                    gitOutput(
+                        "git",
+                        "--git-dir=${bareDir.absolutePath}",
+                        "rev-parse",
+                        "--is-bare-repository",
+                    ) shouldBe "true"
+                    File(repoDir, "clone-ops").shouldNotExist()
                 }
             }
 
-            `when`("the target directory already exists") {
-                val repo = createTestRepo(project.objects, bareRepo.absolutePath)
-                val result = GitOperations.cloneRepo(repo, repoDir)
+            baseDir.deleteRecursively()
+        }
 
-                then("skips and returns SKIP") {
-                    result shouldStartWith "SKIP"
-                    result shouldContain "already exists"
-                }
-            }
+        given("cloneRepo with an existing bare repository") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "update-ops")
+            val repoDir = File(baseDir, "repos").apply { mkdirs() }
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath)
+            GitOperations.cloneRepo(repo, repoDir) shouldStartWith "OK"
 
-            `when`("cloning with a non-default baseBranch that exists on remote") {
-                // Create a bare repo with a develop branch
-                val branchBare = createBareRepo(baseDir, "clone-branch")
-                val tmpWork = File(baseDir, "branch-setup")
-                gitExec("git", "clone", branchBare.absolutePath, tmpWork.absolutePath)
+            `when`("a new remote branch is pushed and cloneRepo runs again") {
+                val tmpWork = File(baseDir, "update-setup")
+                gitExec("git", "clone", remote.absolutePath, tmpWork.absolutePath)
                 gitExec("git", "-C", tmpWork.absolutePath, "checkout", "-b", "develop")
                 File(tmpWork, "dev.txt").writeText("develop branch")
                 gitExec("git", "-C", tmpWork.absolutePath, "add", ".")
                 gitExec("git", "-C", tmpWork.absolutePath, "commit", "-m", "Add dev file")
                 gitExec("git", "-C", tmpWork.absolutePath, "push", "origin", "develop")
                 tmpWork.deleteRecursively()
+                val result = GitOperations.cloneRepo(repo, repoDir)
 
-                val branchRepoDir = File(baseDir, "branch-repos").apply { mkdirs() }
-                val repo =
-                    createTestRepo(
-                        project.objects,
-                        branchBare.absolutePath,
-                        baseBranch = "develop",
-                    )
-                val result = GitOperations.cloneRepo(repo, branchRepoDir)
-
-                then("clones and checks out the branch") {
+                then("it fetches the new branch into the existing bare repository") {
                     result shouldStartWith "OK"
-                    val cloneDir = File(branchRepoDir, "clone-branch")
-                    cloneDir.shouldExist()
-                    val branch =
-                        gitOutput(
-                            "git", "-C", cloneDir.absolutePath, "branch", "--show-current",
-                        )
-                    branch shouldBe "develop"
+                    val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+                    gitOutput(
+                        "git",
+                        "--git-dir=${bareDir.absolutePath}",
+                        "show-ref",
+                        "--verify",
+                        "refs/remotes/origin/develop",
+                    ) shouldContain "refs/remotes/origin/develop"
                 }
-            }
-
-            `when`("cloning with a baseBranch that does not exist anywhere") {
-                val nobranchBare = createBareRepo(baseDir, "clone-nobranch")
-                val nobranchRepoDir = File(baseDir, "nobranch-repos").apply { mkdirs() }
-                val repo =
-                    createTestRepo(
-                        project.objects,
-                        nobranchBare.absolutePath,
-                        baseBranch = "nonexistent-branch",
-                    )
-                val result = GitOperations.cloneRepo(repo, nobranchRepoDir)
-
-                then("falls back to checkout -b and creates local branch") {
-                    result shouldStartWith "OK"
-                    val cloneDir = File(nobranchRepoDir, "clone-nobranch")
-                    cloneDir.shouldExist()
-                    val branch =
-                        gitOutput(
-                            "git", "-C", cloneDir.absolutePath, "branch", "--show-current",
-                        )
-                    branch shouldBe "nonexistent-branch"
-                }
-
-                nobranchRepoDir.deleteRecursively()
             }
 
             baseDir.deleteRecursively()
@@ -420,10 +393,13 @@ class GitOperationsTest :
                     GitOperations.cloneRepo(repo, repoDir).also { results.add(it) }
                 }
 
-                then("all repos are cloned successfully") {
-                    File(repoDir, "parallel-a").shouldExist()
-                    File(repoDir, "parallel-b").shouldExist()
-                    File(repoDir, "parallel-c").shouldExist()
+                then("all bare repos are cloned successfully") {
+                    WorkspaceLayout.bareRepository(repoDir, repoA).shouldExist()
+                    WorkspaceLayout.bareRepository(repoDir, repoB).shouldExist()
+                    WorkspaceLayout.bareRepository(repoDir, repoC).shouldExist()
+                    File(repoDir, "parallel-a").shouldNotExist()
+                    File(repoDir, "parallel-b").shouldNotExist()
+                    File(repoDir, "parallel-c").shouldNotExist()
                 }
             }
 
@@ -433,8 +409,8 @@ class GitOperationsTest :
                     GitOperations.cloneRepo(repo, repoDir).also { results.add(it) }
                 }
 
-                then("all repos are skipped") {
-                    results.forEach { it shouldStartWith "SKIP" }
+                then("all existing bare repos are fetched successfully") {
+                    results.forEach { it shouldStartWith "OK" }
                 }
             }
 

@@ -45,13 +45,28 @@ internal object GitOperations {
     }
 
     fun cloneRepo(repo: WorkspaceRepository, repoDir: File): String {
-        val target = File(repoDir, repo.directoryName)
-        if (target.exists()) return "SKIP ${repo.repoName} — already exists"
-        val url = repo.path.get().value
-        target.parentFile?.mkdirs()
-        val cloneResult = exec("git", "clone", url, target.absolutePath)
-        if (cloneResult != 0) return "FAIL ${repo.repoName}: git clone exit $cloneResult"
-        return checkoutBaseBranch(repo, target)
+        val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+        if (bareDir.exists() && !isBareRepository(bareDir)) {
+            return "FAIL ${repo.repoName}: ${bareDir.absolutePath} exists but is not a bare Git repository"
+        }
+        if (!bareDir.exists()) {
+            bareDir.parentFile?.mkdirs()
+            val cloneResult = exec("git", "clone", "--bare", repo.path.get().value, bareDir.absolutePath)
+            if (cloneResult != 0) return "FAIL ${repo.repoName}: bare clone exit $cloneResult"
+        }
+        return configureAndFetch(repo, bareDir)
+    }
+
+    private fun configureAndFetch(
+        repo: WorkspaceRepository,
+        bareDir: File,
+    ): String {
+        val refspec = "+refs/heads/*:refs/remotes/origin/*"
+        val configResult =
+            exec("git", "--git-dir=${bareDir.absolutePath}", "config", "remote.origin.fetch", refspec)
+        if (configResult != 0) return "FAIL ${repo.repoName}: remote configuration exit $configResult"
+        val fetchResult = exec("git", "--git-dir=${bareDir.absolutePath}", "fetch", "origin", "--prune")
+        return if (fetchResult == 0) "OK ${repo.repoName}" else "FAIL ${repo.repoName}: fetch exit $fetchResult"
     }
 
     fun createWorktree(
@@ -63,16 +78,9 @@ internal object GitOperations {
         require(workingBranch.isNotBlank()) { "wrkx: A working branch is required to create worktrees." }
         val target = WorkspaceLayout.worktree(repoDir, workingBranch, repo, allowedPrefixes)
         val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
-        val cloneResult = ensureBareRepository(repo, bareDir)
-        val fetchResult =
-            if (cloneResult == null) {
-                exec("git", "--git-dir=${bareDir.absolutePath}", "fetch", "origin", "--prune")
-            } else {
-                -1
-            }
+        val cloneResult = cloneRepo(repo, repoDir)
         return when {
-            cloneResult != null -> cloneResult
-            fetchResult != 0 -> "FAIL ${repo.repoName}: fetch exit $fetchResult"
+            cloneResult.startsWith("FAIL") -> cloneResult
             target.exists() -> "SKIP ${repo.repoName} — worktree already exists"
             else -> {
                 target.parentFile?.mkdirs()
@@ -82,19 +90,8 @@ internal object GitOperations {
         }
     }
 
-    private fun ensureBareRepository(
-        repo: WorkspaceRepository,
-        bareDir: File,
-    ): String? {
-        if (bareDir.exists()) return null
-        bareDir.parentFile?.mkdirs()
-        val result = exec("git", "clone", "--bare", repo.path.get().value, bareDir.absolutePath)
-        if (result != 0) return "FAIL ${repo.repoName}: bare clone exit $result"
-        val refspec = "+refs/heads/*:refs/remotes/origin/*"
-        val configResult =
-            exec("git", "--git-dir=${bareDir.absolutePath}", "config", "remote.origin.fetch", refspec)
-        return if (configResult == 0) null else "FAIL ${repo.repoName}: remote configuration exit $configResult"
-    }
+    private fun isBareRepository(bareDir: File): Boolean =
+        execOutput("git", "--git-dir=${bareDir.absolutePath}", "rev-parse", "--is-bare-repository") == "true"
 
     private fun addWorktree(
         repo: WorkspaceRepository,
@@ -143,21 +140,6 @@ internal object GitOperations {
             "--quiet",
             reference,
         ) == 0
-
-    private fun checkoutBaseBranch(repo: WorkspaceRepository, target: File): String {
-        val branch = repo.baseBranch.get().value
-        if (branch.isBlank() || branch == "main") return "OK ${repo.repoName}"
-        val result = exec("git", "-C", target.absolutePath, "checkout", branch)
-        if (result == 0) return "OK ${repo.repoName}"
-        val create = exec("git", "-C", target.absolutePath, "checkout", "-b", branch)
-        return if (create ==
-            0
-        ) {
-            "OK ${repo.repoName}"
-        } else {
-            "FAIL ${repo.repoName}: checkout baseBranch '$branch' exit $create"
-        }
-    }
 
     fun pullRepo(repo: WorkspaceRepository, repoDir: File): String {
         val dir = File(repoDir, repo.directoryName)

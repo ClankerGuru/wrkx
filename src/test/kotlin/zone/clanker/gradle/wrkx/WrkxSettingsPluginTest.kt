@@ -7,6 +7,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.file.shouldExist
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
 import org.gradle.api.file.BuildLayout
@@ -424,6 +425,8 @@ class WrkxSettingsPluginTest :
                     project.tasks.findByName(Wrkx.TASK_CHECKOUT).shouldNotBeNull()
 
                     project.tasks.findByName(Wrkx.TASK_CLONE)!!.group shouldBe Wrkx.GROUP
+                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "git clone --bare"
+                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "workspace-repos/bare"
                     project.tasks.findByName(Wrkx.TASK_PULL)!!.group shouldBe Wrkx.GROUP
                     project.tasks.findByName(Wrkx.TASK_CHECKOUT)!!.group shouldBe Wrkx.GROUP
                 }
@@ -499,6 +502,7 @@ class WrkxSettingsPluginTest :
                         project.registerPerRepoTasks(ext, tmpDir)
                     }
                     project.tasks.findByName("${Wrkx.TASK_CLONE}-gort").shouldNotBeNull()
+                    project.tasks.findByName("${Wrkx.TASK_CLONE}-gort")!!.description shouldContain "git clone --bare"
                     project.tasks.findByName("${Wrkx.TASK_PULL}-gort").shouldNotBeNull()
                     project.tasks.findByName("${Wrkx.TASK_CHECKOUT}-gort").shouldNotBeNull()
                 }
