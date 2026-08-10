@@ -23,6 +23,8 @@ object TestFactory {
     ): WorkspaceRepository {
         val repo = objects.newInstance(WorkspaceRepository::class.java, name)
         repo.path.set(RepositoryUrl(path))
+        repo.categories.set(emptyList())
+        @Suppress("DEPRECATION")
         repo.category.set(category)
         repo.substitutions.set(substitutions)
         repo.substitute.set(substitute)

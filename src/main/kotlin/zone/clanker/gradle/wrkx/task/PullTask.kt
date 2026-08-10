@@ -1,18 +1,19 @@
 package zone.clanker.gradle.wrkx.task
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.TaskAction
-import org.gradle.process.ExecOperations
 import zone.clanker.gradle.wrkx.Wrkx
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
 import javax.inject.Inject
 
 /**
- * Pulls the latest changes for a single repository using `git pull --ff-only`.
+ * Updates one bare repository and merges its base branch into the selected worktree.
  *
  * Registered per-repo as `wrkx-pull-<name>` by [Wrkx.SettingsPlugin].
- * Fails if the repo directory doesn't exist -- run [CloneTask] first.
+ * Creates or updates the shared bare repository first. With no selected branch,
+ * it performs only the fetch and leaves all worktrees unchanged.
  *
  * ```bash
  * ./gradlew wrkx-pull-gort      # pull just gort
@@ -21,7 +22,8 @@ import javax.inject.Inject
  *
  * @param repo the repository to pull
  * @param repoDir base directory where repos are cloned
- * @param execOps Gradle-injected process execution service
+ * @param workingBranchProvider lazy selected branch; an empty value fetches without merging
+ * @param allowedBranchPrefixes branch prefixes accepted by the workspace
  * @see CloneTask
  * @see CheckoutTask
  */
@@ -31,18 +33,19 @@ abstract class PullTask
     constructor(
         private val repo: WorkspaceRepository,
         private val repoDir: File,
-        private val execOps: ExecOperations,
+        private val workingBranchProvider: Provider<String>,
+        private val allowedBranchPrefixes: Set<String>,
     ) : DefaultTask() {
         init {
             group = Wrkx.GROUP
-            description = "Pull baseBranch for ${repo.repoName} from its remote"
+            description =
+                "Fetch ${repo.repoName}'s shared bare repository, then merge origin/baseBranch into its selected " +
+                "branch worktree; refuses dirty worktrees and aborts conflicting merges"
         }
 
         /**
-         * Fetch and fast-forward merge the baseBranch from the remote.
-         *
-         * Skips repos with no configured remote. Fails if the repo directory
-         * does not exist on disk.
+         * Fetch and merge baseBranch into the selected clean worktree.
+         * Conflicting merges are aborted before the task reports recovery steps.
          *
          * ```bash
          * ./gradlew wrkx-pull-gort
@@ -50,39 +53,14 @@ abstract class PullTask
          */
         @TaskAction
         fun pull() {
-            val dir = File(repoDir, repo.directoryName)
-            check(dir.exists()) {
-                """
-                wrkx: Cannot pull '${repo.repoName}' -- directory not found at ${dir.absolutePath}.
-                Run './gradlew ${Wrkx.TASK_CLONE}-${repo.sanitizedBuildName}' to clone it first.
-                """.trimIndent()
-            }
-
-            if (!hasRemote(dir)) {
-                logger.lifecycle("wrkx: Skipping pull for ${repo.repoName} — no remote configured")
-                return
-            }
-
-            val base = repo.baseBranch.get().value
-            logger.lifecycle("wrkx: Pulling ${repo.repoName} (baseBranch: $base)...")
-            execOps.exec {
-                it.workingDir = dir
-                it.commandLine("git", "fetch", "origin", base)
-            }
-            execOps.exec {
-                it.workingDir = dir
-                it.commandLine("git", "merge", "--ff-only", "origin/$base")
-            }
-            logger.lifecycle("wrkx: Pulled ${repo.repoName} from $base")
-        }
-
-        private fun hasRemote(dir: File): Boolean {
-            val output = java.io.ByteArrayOutputStream()
-            execOps.exec {
-                it.workingDir = dir
-                it.commandLine("git", "remote")
-                it.standardOutput = output
-            }
-            return output.toString().trim().isNotEmpty()
+            val result =
+                GitOperations.pullRepo(
+                    repo,
+                    repoDir,
+                    workingBranchProvider.get().ifBlank { null },
+                    allowedBranchPrefixes,
+                )
+            logger.lifecycle(result)
+            check(!result.startsWith("FAIL")) { "wrkx: $result" }
         }
     }

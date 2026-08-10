@@ -43,7 +43,10 @@ internal class ReposCatalogRenderer(
                 """.trimMargin() + "\n"
         }
 
-        val grouped = repos.groupBy { it.category.get().ifBlank { "default" } }
+        val grouped =
+            repos
+                .flatMap { repo -> categories(repo).map { category -> category to repo } }
+                .groupBy({ it.first }, { it.second })
         val total = repos.size
         val cloned = repos.count { isCloned(it) }
         val substituted = repos.count { it.substitute.get() }
@@ -58,12 +61,12 @@ internal class ReposCatalogRenderer(
                 |
                 |## All Repos
                 |
-                || # | Name | Path | Category | Cloned | Enabled | Substitute | Base Branch | Substitutions |
-                |---|------|------|----------|--------|---------|------------|-------------|---------------|
+                || # | Name | Path | Categories | Cloned | Enabled | Substitute | Base Branch | Substitutions |
+                |---|------|------|------------|--------|---------|------------|-------------|---------------|
                 |
                 """.trimMargin(),
             )
-            appendSummaryRows(grouped)
+            appendSummaryRows()
             appendLine()
             appendCategoryBreakdown(grouped)
             appendMachineReadable()
@@ -73,16 +76,8 @@ internal class ReposCatalogRenderer(
     private fun isCloned(repo: WorkspaceRepository): Boolean =
         WorkspaceLayout.bareRepository(repoDir, repo).exists()
 
-    private fun StringBuilder.appendSummaryRows(
-        grouped: Map<String, List<WorkspaceRepository>>,
-    ) {
-        val rows =
-            grouped.entries
-                .sortedBy { it.key }
-                .flatMap { (category, categoryRepos) ->
-                    categoryRepos.sortedBy { it.repoName }.map { it to category }
-                }
-        rows.forEachIndexed { index, (repo, category) ->
+    private fun StringBuilder.appendSummaryRows() {
+        repos.sortedBy { it.repoName }.forEachIndexed { index, repo ->
             val onDisk = if (isCloned(repo)) "yes" else "no"
             val enabledStr = if (repo.enabled) "yes" else "no"
             val sub = if (repo.substitute.get()) "yes" else "no"
@@ -97,7 +92,7 @@ internal class ReposCatalogRenderer(
                     }
                 }
             appendLine(
-                "| ${index + 1} | `${repo.repoName}` | `$pathStr` | $category" +
+                "| ${index + 1} | `${repo.repoName}` | `$pathStr` | ${categories(repo).joinToString(", ")}" +
                     " | $onDisk | $enabledStr | $sub | `$baseBranch` | $subs |",
             )
         }
@@ -143,7 +138,7 @@ internal class ReposCatalogRenderer(
             appendLine(
                 "name=${repo.repoName}" +
                     " path=${repo.path.get()}" +
-                    " category=${repo.category.get()}" +
+                    " categories=[${categories(repo).joinToString(";")}]" +
                     " cloned=${isCloned(repo)}" +
                     " enabled=${repo.enabled}" +
                     " substitute=${repo.substitute.get()}" +
@@ -153,4 +148,7 @@ internal class ReposCatalogRenderer(
         }
         appendLine("```")
     }
+
+    private fun categories(repo: WorkspaceRepository): List<String> =
+        repo.effectiveCategories.ifEmpty { listOf("default") }
 }

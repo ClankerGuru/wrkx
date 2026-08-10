@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  * {
  *   "name": "gort",
  *   "path": "git@github.com:org/repo.git",
- *   "category": "ui",
+ *   "categories": ["checkout", "ui"],
  *   "substitute": true,
  *   "substitutions": ["zone.clanker:gort-tokens,tokens"],
  *   "baseBranch": "main"
@@ -25,7 +25,8 @@ import kotlinx.serialization.Serializable
  *
  * @property name user-chosen unique identifier for this repo
  * @property path repository URL or path (any format `git clone` accepts)
- * @property category grouping label for display in `wrkx-status`
+ * @property categories grouping labels for display in `wrkx-status`
+ * @property category deprecated singular grouping label retained for existing configuration files
  * @property substitute master switch for dependency substitution
  * @property substitutions Maven artifacts this repo produces locally
  * @property baseBranch the repo's default branch
@@ -37,6 +38,7 @@ data class RepositoryEntry(
     val name: String,
     @SerialName("path")
     val path: RepositoryUrl,
+    @Deprecated("Use categories")
     @SerialName("category")
     val category: String = "",
     @SerialName("substitute")
@@ -45,7 +47,18 @@ data class RepositoryEntry(
     val substitutions: List<ArtifactSubstitution> = emptyList(),
     @SerialName("baseBranch")
     val baseBranch: GitReference = GitReference("main"),
+    @SerialName("categories")
+    val categories: List<String> = emptyList(),
 ) {
     /** Directory name derived from [path], used as the clone target folder name. */
     val directoryName: String get() = path.directoryName
+
+    /** Normalized categories from the canonical list and deprecated singular value. */
+    @Suppress("DEPRECATION")
+    val effectiveCategories: List<String>
+        get() =
+            (categories + category)
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinct()
 }

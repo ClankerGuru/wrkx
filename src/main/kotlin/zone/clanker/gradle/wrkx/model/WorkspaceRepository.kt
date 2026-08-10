@@ -36,7 +36,11 @@ public abstract class WorkspaceRepository
         /** Repository URL or local path used by `git clone`. */
         public abstract val path: Property<RepositoryUrl>
 
-        /** Grouping label for display in the `wrkx-status` report. */
+        /** Grouping labels for ownership and display in the `wrkx-status` report. */
+        public abstract val categories: ListProperty<String>
+
+        /** Deprecated singular grouping label retained for settings DSL compatibility. */
+        @Deprecated("Use categories")
         public abstract val category: Property<String>
 
         /** Maven artifacts this repo provides locally for dependency substitution. */
@@ -65,6 +69,15 @@ public abstract class WorkspaceRepository
 
         /** Directory name derived from the repo URL, used for the clone target. */
         public val directoryName: String get() = path.get().directoryName
+
+        /** Normalized categories including a value configured through the deprecated DSL property. */
+        @Suppress("DEPRECATION")
+        public val effectiveCategories: List<String>
+            get() =
+                ((categories.orNull ?: emptyList()) + (category.orNull ?: ""))
+                    .map(String::trim)
+                    .filter(String::isNotEmpty)
+                    .distinct()
 
         /**
          * Gradle-safe build name derived from [directoryName].

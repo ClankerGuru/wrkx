@@ -50,7 +50,7 @@ class StatusTaskTest :
 
                 container.register("libA") { repo ->
                     repo.path.set(RepositoryUrl("org/lib-a"))
-                    repo.category.set("core")
+                    repo.categories.set(listOf("core", "shared"))
                     repo.substitute.set(true)
                     repo.substitutions.set(
                         listOf(
@@ -66,7 +66,7 @@ class StatusTaskTest :
 
                 container.register("libB") { repo ->
                     repo.path.set(RepositoryUrl("org/lib-b"))
-                    repo.category.set("tools")
+                    repo.categories.set(listOf("tools"))
                     repo.substitute.set(false)
                     repo.baseBranch.set(GitReference("develop"))
                     repo.clonePath.set(File(repoDir, "lib-b"))
@@ -101,7 +101,7 @@ class StatusTaskTest :
                 then("shows clone status correctly") {
                     val content = output.readText()
                     // libA has a bare repository on disk
-                    content shouldContain "| 1 | `libA` | `org/lib-a` | core | yes |"
+                    content shouldContain "| 1 | `libA` | `org/lib-a` | core, shared | yes |"
                     // libB does not
                     content shouldContain "| 2 | `libB` | `org/lib-b` | tools | no |"
                 }
@@ -114,6 +114,7 @@ class StatusTaskTest :
                 then("shows category breakdown") {
                     val content = output.readText()
                     content shouldContain "### core"
+                    content shouldContain "### shared"
                     content shouldContain "### tools"
                 }
 

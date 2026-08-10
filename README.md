@@ -58,7 +58,7 @@ wrkx {
     "name": "checkoutUi",
     "path": "git@github.com:MyOrg/checkout-ui.git",
     "baseBranch": "main",
-    "category": "ui",
+    "categories": ["checkout", "ui"],
     "substitute": true,
     "substitutions": ["com.myorg:checkout-ui,:"]
   },
@@ -66,7 +66,7 @@ wrkx {
     "name": "sharedModels",
     "path": "git@github.com:MyOrg/shared-models.git",
     "baseBranch": "main",
-    "category": "core",
+    "categories": ["checkout", "core"],
     "substitute": true,
     "substitutions": ["com.myorg:shared-models,:"]
   },
@@ -74,7 +74,7 @@ wrkx {
     "name": "hostApp",
     "path": "git@github.com:MyOrg/host-app.git",
     "baseBranch": "develop",
-    "category": "apps"
+    "categories": ["checkout", "apps"]
   }
 ]
 ```
@@ -90,8 +90,7 @@ plugins {
 ### Then
 
 ```bash
-./gradlew wrkx-clone       # clone all repos
-./gradlew wrkx-checkout    # checkout feature/checkout-flow in all repos
+./gradlew wrkx-worktree    # clone/fetch repos and create feature/checkout-flow worktrees
 ./gradlew build             # host-app uses local checkoutUi and sharedModels
 ```
 
@@ -104,7 +103,8 @@ Changes to `sharedModels` are instantly visible in `checkoutUi` and `hostApp`. N
 | `name` | yes | -- | Unique identifier. Must be a valid Kotlin identifier (camelCase). Used in DSL, tasks, and logs. |
 | `path` | yes | -- | Git URL or local path. Any format `git clone` accepts (SSH, HTTPS, local). |
 | `baseBranch` | no | `"main"` | The repo's default branch. Where `wrkx-pull` syncs from. |
-| `category` | no | `""` | Grouping label for `wrkx-status` output. |
+| `categories` | no | `[]` | Grouping and ownership labels for `wrkx-status`; repositories may belong to multiple categories. |
+| `category` | no | `""` | Deprecated singular label. Use `categories`; existing files remain supported. |
 | `substitute` | no | `false` | Enable dependency substitution from local source. |
 | `substitutions` | no | `[]` | Maven artifacts this repo provides: `"group:artifact,project"`. |
 
@@ -197,23 +197,27 @@ wrkx {
 | `wrkx` | List all available workspace tasks |
 | `wrkx-clone` | Run `git clone --bare` under `workspace-repos/bare` for every repo; fetch existing bare repos |
 | `wrkx-clone-<name>` | Create or update one bare repo under `workspace-repos/bare` |
-| `wrkx-pull` | Pull baseBranch for all repos from their remotes |
-| `wrkx-pull-<name>` | Pull baseBranch for a single repo |
-| `wrkx-checkout` | Checkout workingBranch (or baseBranch) across all repos |
-| `wrkx-checkout-<name>` | Checkout workingBranch (or baseBranch) for a single repo |
+| `wrkx-fetch` | Fetch every branch and prune deleted origin references in existing bare repos |
+| `wrkx-fetch-<name>` | Fetch every branch for one existing bare repo |
+| `wrkx-pull` | Fetch all bare repos and merge each baseBranch into its selected clean worktree |
+| `wrkx-pull-<name>` | Fetch one bare repo and merge its baseBranch into its selected clean worktree |
+| `wrkx-checkout` | Compatibility alias for `wrkx-worktree` |
+| `wrkx-checkout-<name>` | Compatibility alias for `wrkx-worktree-<name>` |
 | `wrkx-worktree` | Create bare repositories and branch-scoped worktrees |
 | `wrkx-worktree-<name>` | Create a branch-scoped worktree for a single repo |
 | `wrkx-status` | Generate workspace status report at `.wrkx/repos.md` |
-| `wrkx-prune` | Remove repo directories not defined in wrkx.json |
+| `wrkx-prune` | Remove safe, merged worktrees after their observed remote branch is deleted |
+| `wrkx-prune-<name>` | Apply the same safe pruning rules to one repository |
 
 ```bash
 ./gradlew wrkx-clone           # clone --bare all repos, or fetch existing bare repos
 ./gradlew wrkx-clone-gort      # clone --bare just gort, or fetch it when present
-./gradlew wrkx-pull            # pull baseBranch for all repos
-./gradlew wrkx-checkout        # checkout workingBranch or baseBranch
+./gradlew wrkx-fetch           # fetch all branches without creating worktrees
+./gradlew wrkx-pull -Pwrkx.branch=feature/new-catalog
+./gradlew wrkx-checkout -Pwrkx.branch=feature/new-catalog # compatibility alias
 ./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
 ./gradlew wrkx-status          # generate workspace status report
-./gradlew wrkx-prune           # remove orphaned repo directories
+./gradlew wrkx-prune           # remove eligible merged worktrees after remote deletion
 ```
 
 ### Parallel execution
@@ -222,10 +226,10 @@ Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`, `wrkx-worktree`) ru
 parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any
 repo fails.
 
-### Checkout behavior
+### Checkout compatibility
 
-- **With `workingBranch` set**: creates/checks out that branch from `baseBranch` in all enabled repos. Fails if working directory is dirty -- commit or stash first.
-- **Without `workingBranch`**: checks out each repo's `baseBranch`.
+`wrkx-checkout` no longer switches branches inside an existing checkout. It is a compatibility alias for
+`wrkx-worktree`, which creates or reuses branch-scoped worktrees without disturbing another branch's files.
 
 ### Branch worktrees
 
@@ -270,8 +274,26 @@ separate invocation because Gradle selects included builds before tasks execute.
 
 ### Pull behavior
 
-- Fetches and fast-forward merges `origin/<baseBranch>` for each repo.
-- Repos with no remote are skipped with a log message.
+- Always fetches and prunes the shared bare repository first.
+- With a selected branch, merges `origin/<baseBranch>` into that branch's worktree.
+- Refuses a dirty worktree without changing it.
+- Aborts a conflicting automatic merge and reports the worktree path and manual recovery action.
+- Without a selected branch, updates only the bare repository and does not merge a worktree.
+
+### Prune behavior
+
+`wrkx-prune` fetches with `--prune`, then evaluates every WRKX-owned worktree independently. It removes a worktree and
+its local branch only when all of these conditions hold:
+
+- WRKX previously observed the same branch on `origin`.
+- The branch no longer exists on `origin` after the fresh fetch.
+- The local branch tip is fully contained in that repository's `origin/<baseBranch>`.
+- The worktree has no staged, modified, or untracked files.
+- The worktree path exactly matches the configured WRKX layout.
+
+It retains branches that were never pushed, remain on the remote, contain unmerged commits, have local changes, use an
+external worktree path, are detached, or are `main`/`dev`. Merging a pull request does not necessarily delete its remote
+branch; enable remote branch deletion or delete it explicitly before expecting WRKX to prune the worktree.
 
 ## How it works
 

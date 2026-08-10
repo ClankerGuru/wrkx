@@ -123,15 +123,13 @@ class GitOperationsTest :
             baseDir.deleteRecursively()
         }
 
-        given("pullRepo with a cloned repo") {
+        given("pullRepo with a shared bare repository") {
             val baseDir = tempDir()
             val bareRepo = createBareRepo(baseDir, "pull-ops")
             val repoDir = File(baseDir, "repos").apply { mkdirs() }
             val project = ProjectBuilder.builder().build()
-
-            // Clone it first
-            val cloneDir = File(repoDir, "pull-ops")
-            gitExec("git", "clone", bareRepo.absolutePath, cloneDir.absolutePath)
+            val repo = createTestRepo(project.objects, bareRepo.absolutePath)
+            GitOperations.cloneRepo(repo, repoDir) shouldStartWith "OK"
 
             `when`("a new commit is pushed to bare and pull is executed") {
                 // Push a new commit to the bare repo
@@ -143,41 +141,40 @@ class GitOperationsTest :
                 gitExec("git", "-C", pushDir.absolutePath, "push")
                 pushDir.deleteRecursively()
 
-                val repo = createTestRepo(project.objects, bareRepo.absolutePath)
-                val result = GitOperations.pullRepo(repo, repoDir)
+                val result = GitOperations.pullRepo(repo, repoDir, null)
 
-                then("pulls the new commit and returns OK") {
+                then("fetches the new commit into the bare repository and returns OK") {
                     result shouldStartWith "OK"
-                    File(cloneDir, "new-file.txt").readText() shouldContain "pulled content"
+                    gitOutput(
+                        "git",
+                        "--git-dir=${WorkspaceLayout.bareRepository(repoDir, repo).absolutePath}",
+                        "show-ref",
+                        "--verify",
+                        "refs/remotes/origin/main",
+                    ) shouldContain "refs/remotes/origin/main"
                 }
             }
 
-            `when`("the repo directory does not exist") {
-                // Use a URL that produces a directoryName with no matching directory on disk
-                val repo = createTestRepo(project.objects, "/tmp/nonexistent-repo.git")
-                val result = GitOperations.pullRepo(repo, repoDir)
+            `when`("an active branch worktree does not exist") {
+                val result = GitOperations.pullRepo(repo, repoDir, "feature/missing")
 
-                then("skips with not-cloned message") {
-                    result shouldStartWith "SKIP"
-                    result shouldContain "not cloned"
+                then("fails with the worktree recovery command") {
+                    result shouldStartWith "FAIL"
+                    result shouldContain "wrkx-worktree-pull-ops"
+                    result shouldContain "feature/missing"
                 }
             }
 
-            `when`("the repo has no remote configured") {
-                // Create a local git repo without any remote
-                val localDir = File(repoDir, "no-remote").apply { mkdirs() }
-                gitExec("git", "init", localDir.absolutePath)
-                File(localDir, "file.txt").writeText("local only")
-                gitExec("git", "-C", localDir.absolutePath, "add", ".")
-                gitExec("git", "-C", localDir.absolutePath, "commit", "-m", "Init")
+            `when`("the selected worktree is dirty") {
+                GitOperations.createWorktree(repo, repoDir, "feature/dirty") shouldStartWith "OK"
+                val worktree = WorkspaceLayout.worktree(repoDir, "feature/dirty", repo)
+                File(worktree, "dirty.txt").writeText("local change")
+                val result = GitOperations.pullRepo(repo, repoDir, "feature/dirty")
 
-                // Use a URL whose directoryName matches the local dir name "no-remote"
-                val repo = createTestRepo(project.objects, "file:///org/no-remote")
-                val result = GitOperations.pullRepo(repo, repoDir)
-
-                then("skips with no-remote message") {
-                    result shouldStartWith "SKIP"
-                    result shouldContain "no remote"
+                then("fails without deleting the local change") {
+                    result shouldStartWith "FAIL"
+                    result shouldContain "uncommitted changes"
+                    File(worktree, "dirty.txt").readText() shouldBe "local change"
                 }
             }
 
@@ -285,89 +282,49 @@ class GitOperationsTest :
             baseDir.deleteRecursively()
         }
 
-        given("checkoutRepo with a cloned repo") {
+        given("checkoutRepo with a bare remote") {
             val baseDir = tempDir()
             val bareRepo = createBareRepo(baseDir, "checkout-ops")
             val repoDir = File(baseDir, "repos").apply { mkdirs() }
             val project = ProjectBuilder.builder().build()
+            val repo =
+                createTestRepo(
+                    project.objects,
+                    bareRepo.absolutePath,
+                    baseBranch = "main",
+                )
 
-            val cloneDir = File(repoDir, "checkout-ops")
-            gitExec("git", "clone", bareRepo.absolutePath, cloneDir.absolutePath)
-
-            `when`("checking out the baseBranch (main)") {
-                val repo =
-                    createTestRepo(
-                        project.objects,
-                        bareRepo.absolutePath,
-                        baseBranch = "main",
-                    )
+            `when`("checkout is requested for the base branch") {
                 val result = GitOperations.checkoutRepo(repo, repoDir, "")
 
-                then("checks out main and returns OK") {
+                then("it creates the main worktree and returns OK") {
                     result shouldStartWith "OK"
                     val branch =
                         gitOutput(
-                            "git", "-C", cloneDir.absolutePath, "branch", "--show-current",
+                            "git",
+                            "-C",
+                            WorkspaceLayout.worktree(repoDir, "main", repo).absolutePath,
+                            "branch",
+                            "--show-current",
                         )
                     branch shouldBe "main"
                 }
             }
 
-            `when`("working directory is dirty") {
-                File(cloneDir, "dirty.txt").writeText("uncommitted")
-
-                val repo =
-                    createTestRepo(
-                        project.objects,
-                        bareRepo.absolutePath,
-                        baseBranch = "main",
-                    )
-                val result = GitOperations.checkoutRepo(repo, repoDir, "")
-
-                then("returns FAIL with dirty working directory message") {
-                    result shouldStartWith "FAIL"
-                    result shouldContain "dirty working directory"
-                }
-
-                // Clean up
-                File(cloneDir, "dirty.txt").delete()
-            }
-
             `when`("workingBranch does not exist yet") {
-                val repo =
-                    createTestRepo(
-                        project.objects,
-                        bareRepo.absolutePath,
-                        baseBranch = "main",
-                    )
                 val result = GitOperations.checkoutRepo(repo, repoDir, "feature/new-ops")
 
-                then("creates the new branch from origin/baseBranch and returns OK") {
+                then("creates a separate worktree from origin/baseBranch") {
                     result shouldStartWith "OK"
                     val branch =
                         gitOutput(
-                            "git", "-C", cloneDir.absolutePath, "branch", "--show-current",
+                            "git",
+                            "-C",
+                            WorkspaceLayout.worktree(repoDir, "feature/new-ops", repo).absolutePath,
+                            "branch",
+                            "--show-current",
                         )
                     branch shouldBe "feature/new-ops"
-                }
-
-                // Return to main for subsequent tests
-                gitExec("git", "-C", cloneDir.absolutePath, "checkout", "main")
-            }
-
-            `when`("the repo directory does not exist") {
-                // Use a URL whose directoryName does not match any directory in repoDir
-                val repo =
-                    createTestRepo(
-                        project.objects,
-                        "/tmp/missing-checkout.git",
-                        baseBranch = "main",
-                    )
-                val result = GitOperations.checkoutRepo(repo, repoDir, "main")
-
-                then("skips with not-cloned message") {
-                    result shouldStartWith "SKIP"
-                    result shouldContain "not cloned"
                 }
             }
 
@@ -437,7 +394,7 @@ class GitOperationsTest :
                                 GitOperations.cloneRepo(repo, repoDir)
                             }
                         }
-                    ex.message shouldContain "failed during clone"
+                    ex.message shouldContain "clone failed"
                 }
             }
 
@@ -456,7 +413,7 @@ class GitOperationsTest :
                                 throw IllegalStateException("boom")
                             }
                         }
-                    ex.message shouldContain "failed during explode"
+                    ex.message shouldContain "explode failed"
                 }
             }
 
