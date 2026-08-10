@@ -212,11 +212,8 @@ class CloneIntegrationTest :
                 projectDir.deleteRecursively()
             }
 
-            /**
-             * CLEAN: Verifies that wrkx-prune removes directories that are
-             * not defined in wrkx.json, while preserving repos that are.
-             */
-            `when`("wrkx-prune is run with an orphan directory") {
+            /** Verifies that worktree pruning never deletes unrelated directories. */
+            `when`("wrkx-prune is run with an unrelated directory") {
                 val projectDir =
                     createTestProject(
                         """
@@ -227,23 +224,16 @@ class CloneIntegrationTest :
                 val reposDir = File(projectDir.parentFile, "${projectDir.name}-repos")
                 reposDir.mkdirs()
 
-                // Create an orphan directory that's not in wrkx.json
-                val orphan = File(reposDir, "orphan-repo").apply { mkdirs() }
-                // Create the expected directory so clean has something to compare against
-                val expected = File(reposDir, "test-repo").apply { mkdirs() }
+                val unrelated = File(reposDir, "unrelated-directory").apply { mkdirs() }
 
                 val result = gradle(projectDir, "wrkx-prune")
 
-                then("the clean task succeeds") {
+                then("the prune task succeeds") {
                     result.task(":wrkx-prune")?.outcome shouldBe TaskOutcome.SUCCESS
                 }
 
-                then("the orphan directory is removed") {
-                    orphan.shouldNotExist()
-                }
-
-                then("the expected directory is preserved") {
-                    expected.shouldExist()
+                then("the unrelated directory is preserved") {
+                    unrelated.shouldExist()
                 }
 
                 projectDir.deleteRecursively()
