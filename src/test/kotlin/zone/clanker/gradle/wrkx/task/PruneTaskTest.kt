@@ -9,6 +9,7 @@ import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.testfixtures.ProjectBuilder
 import zone.clanker.gradle.wrkx.model.GitReference
 import zone.clanker.gradle.wrkx.model.RepositoryUrl
+import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
 
@@ -50,14 +51,17 @@ class PruneTaskTest :
             return container
         }
 
+        val workspaceRoots =
+            WorkspaceLayout.defaultBranchPrefixes + WorkspaceLayout.standaloneBranches + setOf("bare", "experiment")
+
         given("repos directory with matching and orphaned directories") {
 
             `when`("prune is executed") {
                 val repoDir = tempDir()
                 File(repoDir, "lib-a").mkdirs()
                 File(repoDir, "lib-b").mkdirs()
-                File(repoDir, "bare").mkdirs()
-                File(repoDir, "branches").mkdirs()
+                workspaceRoots.forEach { File(repoDir, it).mkdirs() }
+                val oldLayout = File(repoDir, "branches").apply { mkdirs() }
                 val orphan = File(repoDir, "old-repo").apply { mkdirs() }
 
                 val container = createContainer("libA", "libB")
@@ -68,19 +72,19 @@ class PruneTaskTest :
                 val project = ProjectBuilder.builder().build()
                 val task =
                     project.tasks
-                        .register("wrkx-prune", PruneTask::class.java, container, repoDir)
+                        .register("wrkx-prune", PruneTask::class.java, container, repoDir, workspaceRoots)
                         .get()
                 task.prune()
 
                 then("orphan directory is removed") {
                     orphan.shouldNotExist()
+                    oldLayout.shouldNotExist()
                 }
 
                 then("known directories are preserved") {
                     File(repoDir, "lib-a").shouldExist()
                     File(repoDir, "lib-b").shouldExist()
-                    File(repoDir, "bare").shouldExist()
-                    File(repoDir, "branches").shouldExist()
+                    workspaceRoots.forEach { File(repoDir, it).shouldExist() }
                 }
 
                 repoDir.deleteRecursively()
@@ -99,7 +103,7 @@ class PruneTaskTest :
                 val project = ProjectBuilder.builder().build()
                 val task =
                     project.tasks
-                        .register("wrkx-prune-noop", PruneTask::class.java, container, repoDir)
+                        .register("wrkx-prune-noop", PruneTask::class.java, container, repoDir, workspaceRoots)
                         .get()
                 task.prune()
 
@@ -133,6 +137,7 @@ class PruneTaskTest :
                                 PruneTask::class.java,
                                 container,
                                 repoFile,
+                                workspaceRoots,
                             ).get()
                     task.prune()
                     repoFile.shouldExist()
@@ -159,6 +164,7 @@ class PruneTaskTest :
                                         PruneTask::class.java,
                                         container,
                                         repoDir,
+                                        workspaceRoots,
                                     ).get()
                             task.prune()
                         }

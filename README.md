@@ -152,6 +152,7 @@ wrkx {
 | `enable(vararg repos)` | Enable specific repos and include them as composite builds |
 | `this["name"]` | Access a repo by name for per-repo configuration |
 | `workingBranch = "branch"` | Select the branch for checkout and branch-scoped included builds |
+| `allowBranchPrefixes("name")` | Add allowed branch prefixes without removing the built-in prefixes |
 
 ### How enablement works
 
@@ -235,21 +236,37 @@ Set `workingBranch` in the DSL or pass `-Pwrkx.branch=<branch>`, then create the
 ./gradlew build -Pwrkx.branch=feature/new-catalog
 ```
 
-Repositories are cloned once as bare repositories under `bare/`. Worktrees for each branch are grouped under
-`branches/<branch>/`, and enabled Gradle builds are included from that branch directory.
+Repositories are cloned once as bare repositories under `bare/`. Prefixed branches must use lowercase kebab-case names.
+The built-in prefixes are `feature`, `bugfix`, `custom`, `poc`, and `release`; `main` and `dev` are valid standalone
+branches. Enabled Gradle builds are included from the selected branch directory.
 
 ```text
 my-workspace-repos/
 ├── bare/
 │   ├── checkout-ui.git/
 │   └── shared-models.git/
-└── branches/
-    └── feature%2Fnew-catalog/
-        ├── checkout-ui/
-        └── shared-models/
+├── feature/
+│   └── new-catalog/
+│       ├── checkout-ui/
+│       └── shared-models/
+└── dev/
+    ├── checkout-ui/
+    └── shared-models/
 ```
 
-Worktrees must be created in a separate invocation because Gradle selects included builds before tasks execute.
+Add organization-specific prefixes from the same settings DSL:
+
+```kotlin
+wrkx {
+    allowBranchPrefixes("experiment", "prototype")
+    workingBranch = "experiment/new-renderer"
+    enableAll()
+}
+```
+
+Android Studio remains open on `my-workspace/`. Change `workingBranch`, create missing worktrees, and run Gradle Sync;
+the next settings evaluation points every `includeBuild()` at the new branch directory. Worktrees must be created in a
+separate invocation because Gradle selects included builds before tasks execute.
 
 ### Pull behavior
 

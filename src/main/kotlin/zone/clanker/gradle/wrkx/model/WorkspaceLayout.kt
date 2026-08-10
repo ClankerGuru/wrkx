@@ -1,11 +1,15 @@
 package zone.clanker.gradle.wrkx.model
 
 import java.io.File
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 /** Filesystem layout for shared bare repositories and branch worktrees. */
 internal object WorkspaceLayout {
+    val defaultBranchPrefixes: Set<String> = setOf("feature", "bugfix", "custom", "poc", "release")
+    val standaloneBranches: Set<String> = setOf("main", "dev")
+
+    private val validSegment = Regex("^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    private val reservedDirectories = standaloneBranches + setOf("bare", "branches")
+
     fun bareRepository(
         repoDir: File,
         repo: WorkspaceRepository,
@@ -15,8 +19,40 @@ internal object WorkspaceLayout {
         repoDir: File,
         branch: String,
         repo: WorkspaceRepository,
-    ): File = File(repoDir, "branches/${branchKey(branch)}/${repo.directoryName}")
+        allowedPrefixes: Set<String> = defaultBranchPrefixes,
+    ): File = File(repoDir, "${branchDirectory(branch, allowedPrefixes)}/${repo.directoryName}")
 
-    internal fun branchKey(branch: String): String =
-        URLEncoder.encode(branch, StandardCharsets.UTF_8).replace("+", "%20")
+    fun validatePrefix(prefix: String) {
+        require(validSegment.matches(prefix)) {
+            "wrkx: Branch prefix '$prefix' must be lowercase kebab-case."
+        }
+        require(prefix !in reservedDirectories) {
+            "wrkx: Branch prefix '$prefix' is reserved and cannot be added."
+        }
+    }
+
+    internal fun branchDirectory(
+        branch: String,
+        allowedPrefixes: Set<String> = defaultBranchPrefixes,
+    ): String {
+        require(branch == branch.trim() && branch.isNotEmpty()) {
+            "wrkx: Working branch must not be blank or contain surrounding whitespace."
+        }
+        if (branch in standaloneBranches) return branch
+
+        val parts = branch.split('/')
+        require(parts.size == BRANCH_PART_COUNT) {
+            "wrkx: Branch '$branch' must be '<prefix>/<kebab-case-name>' or one of $standaloneBranches."
+        }
+        val (prefix, name) = parts
+        require(prefix in allowedPrefixes) {
+            "wrkx: Branch prefix '$prefix' is not allowed. Allowed prefixes: ${allowedPrefixes.sorted()}."
+        }
+        require(validSegment.matches(name)) {
+            "wrkx: Branch name '$name' must be lowercase kebab-case."
+        }
+        return "$prefix/$name"
+    }
+
+    private const val BRANCH_PART_COUNT = 2
 }

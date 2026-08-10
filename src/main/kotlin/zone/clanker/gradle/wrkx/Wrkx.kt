@@ -111,6 +111,20 @@ data object Wrkx {
             /** Branch to checkout for enabled repos when running wrkx-checkout. */
             var workingBranch: String? = null
 
+            private val extraBranchPrefixes = linkedSetOf<String>()
+
+            internal val allowedBranchPrefixes: Set<String>
+                get() = WorkspaceLayout.defaultBranchPrefixes + extraBranchPrefixes
+
+            internal val workspaceRootNames: Set<String>
+                get() = allowedBranchPrefixes + WorkspaceLayout.standaloneBranches + "bare"
+
+            /** Allow additional branch prefixes without removing the built-in prefixes. */
+            fun allowBranchPrefixes(vararg prefixes: String) {
+                prefixes.forEach(WorkspaceLayout::validatePrefix)
+                extraBranchPrefixes.addAll(prefixes)
+            }
+
             /**
              * Container of all [WorkspaceRepository] entries loaded from [CONFIG_FILE].
              *
@@ -192,18 +206,22 @@ data object Wrkx {
                 }
             }
 
-            internal fun activeBranch(): String? =
-                providers
-                    .gradleProperty(BRANCH_PROP)
-                    .orNull
-                    ?.trim()
-                    ?.takeIf { it.isNotEmpty() }
-                    ?: workingBranch?.trim()?.takeIf { it.isNotEmpty() }
+            internal fun activeBranch(): String? {
+                val branch =
+                    providers
+                        .gradleProperty(BRANCH_PROP)
+                        .orNull
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: workingBranch?.takeIf { it.isNotEmpty() }
+                branch?.let { WorkspaceLayout.branchDirectory(it, allowedBranchPrefixes) }
+                return branch
+            }
 
             internal fun checkoutPath(repo: WorkspaceRepository): File? {
                 val branch = activeBranch()
                 return when {
-                    branch != null && baseDir.isPresent -> WorkspaceLayout.worktree(baseDir.asFile.get(), branch, repo)
+                    branch != null && baseDir.isPresent ->
+                        WorkspaceLayout.worktree(baseDir.asFile.get(), branch, repo, allowedBranchPrefixes)
                     repo.clonePath.isPresent -> repo.clonePath.asFile.get()
                     else -> null
                 }
@@ -458,7 +476,9 @@ data object Wrkx {
                             val branch =
                                 extension.activeBranch()
                                     ?: error("wrkx: Set workingBranch or -P$BRANCH_PROP=<branch>.")
-                            logger.lifecycle(GitOperations.createWorktree(repo, repoDir, branch))
+                            logger.lifecycle(
+                                GitOperations.createWorktree(repo, repoDir, branch, extension.allowedBranchPrefixes),
+                            )
                         }
                     }
                 }
@@ -509,7 +529,7 @@ data object Wrkx {
                             extension.activeBranch()
                                 ?: error("wrkx: Set workingBranch or -P$BRANCH_PROP=<branch>.")
                         GitOperations.runParallel(repos.toList(), "worktree") { repo ->
-                            GitOperations.createWorktree(repo, repoDir, branch)
+                            GitOperations.createWorktree(repo, repoDir, branch, extension.allowedBranchPrefixes)
                         }
                     }
                 }
@@ -520,7 +540,13 @@ data object Wrkx {
                 repoDir: File,
             ) {
                 tasks.register(TASK_STATUS, StatusTask::class.java, extension.repos, repoDir)
-                tasks.register(TASK_PRUNE, PruneTask::class.java, extension.repos, repoDir)
+                tasks.register(
+                    TASK_PRUNE,
+                    PruneTask::class.java,
+                    extension.repos,
+                    repoDir,
+                    extension.workspaceRootNames,
+                )
             }
         }
 }
