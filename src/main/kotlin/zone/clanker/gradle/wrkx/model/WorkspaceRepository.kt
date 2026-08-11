@@ -50,7 +50,7 @@ public abstract class WorkspaceRepository
         public abstract val substitute: Property<Boolean>
 
         /** The repo's default branch (where `wrkx-pull` syncs from). */
-        public abstract val baseBranch: Property<GitReference>
+        public abstract val baseBranch: Property<String>
 
         /** Absolute directory where this repo is cloned on disk. */
         public abstract val clonePath: DirectoryProperty
@@ -63,6 +63,9 @@ public abstract class WorkspaceRepository
         public fun enable(value: Boolean = true) {
             enabled = value
         }
+
+        /** Configure this repository inline and return it for `enable(repo { ... })`. */
+        public operator fun invoke(action: WorkspaceRepository.() -> Unit): WorkspaceRepository = apply(action)
 
         /** Human-readable name of this repo (same as the container registration name). */
         public val repoName: String get() = name

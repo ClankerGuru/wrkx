@@ -495,7 +495,7 @@ class WrkxExtensionTest :
                 then("has default conventions") {
                     val repo = ext.repos.getByName("test")
                     repo.substitute.get().shouldBeFalse()
-                    repo.baseBranch.get().value shouldBe "main"
+                    repo.baseBranch.get() shouldBe "main"
                     repo.category.get() shouldBe ""
                 }
             }

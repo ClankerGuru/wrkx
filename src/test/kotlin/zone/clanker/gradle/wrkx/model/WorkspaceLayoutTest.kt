@@ -37,6 +37,13 @@ class WorkspaceLayoutTest :
             }
         }
 
+        given("uppercase prefixed branches") {
+            then("uppercase is preserved in the Git branch name and the filesystem prefix is normalized") {
+                WorkspaceLayout.worktree(baseDir, "Feature/NewCheckout-UI", repo) shouldBe
+                    File(baseDir, "feature/NewCheckout-UI/gort")
+            }
+        }
+
         given("an additional allowed prefix") {
             then("it maps to the same hierarchical layout") {
                 WorkspaceLayout.worktree(
@@ -57,7 +64,6 @@ class WorkspaceLayoutTest :
                     "feature/",
                     "/new-name",
                     "unknown/new-name",
-                    "feature/NewName",
                     "feature/new_name",
                     "feature/new name",
                     "feature/-new-name",

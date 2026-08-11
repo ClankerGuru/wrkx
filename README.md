@@ -142,6 +142,15 @@ wrkx {
 
     // Per-repo access via bracket syntax
     this["hostApp"].enable(true)
+
+    // Configure a repo inline and enable the returned repository
+    enable(
+        hostApp {
+            baseBranch = "Teams/Mobile/Release_2026.08-RC-1"
+            categories = listOf("apps", "mobile")
+        },
+        sharedModels,
+    )
 }
 ```
 
@@ -153,6 +162,10 @@ wrkx {
 | `this["name"]` | Access a repo by name for per-repo configuration |
 | `workingBranch = "branch"` | Select the branch for checkout and branch-scoped included builds |
 | `allowBranchPrefixes("name")` | Add allowed branch prefixes without removing the built-in prefixes |
+
+Per-repository `baseBranch` overrides accept Git branch names with uppercase or lowercase letters, dots, underscores,
+hyphens, and nested forward slashes. The override affects that repository only; `workingBranch` still selects the
+shared WRKX worktree branch.
 
 ### How enablement works
 
@@ -199,12 +212,14 @@ wrkx {
 | `wrkx-clone-<name>` | Create or update one bare repo under `workspace-repos/bare` |
 | `wrkx-fetch` | Fetch every branch and prune deleted origin references in existing bare repos |
 | `wrkx-fetch-<name>` | Fetch every branch for one existing bare repo |
-| `wrkx-pull` | Fetch all bare repos and merge each baseBranch into its selected clean worktree |
+| `wrkx-pull` | Fetch enabled repos and merge each baseBranch into its selected clean worktree |
 | `wrkx-pull-<name>` | Fetch one bare repo and merge its baseBranch into its selected clean worktree |
-| `wrkx-checkout` | Compatibility alias for `wrkx-worktree` |
+| `wrkx-checkout` | Compatibility alias for `wrkx-worktree`; processes enabled repos only |
 | `wrkx-checkout-<name>` | Compatibility alias for `wrkx-worktree-<name>` |
-| `wrkx-worktree` | Create bare repositories and branch-scoped worktrees |
+| `wrkx-worktree` | Create branch-scoped worktrees for enabled repositories only |
 | `wrkx-worktree-<name>` | Create a branch-scoped worktree for a single repo |
+| `wrkx-worktree-delete` | Delete the selected branch's worktrees and local branches across the catalog |
+| `wrkx-worktree-delete-<name>` | Delete one repo's selected-branch worktree and local branch |
 | `wrkx-status` | Generate workspace status report at `.wrkx/repos.md` |
 | `wrkx-prune` | Remove safe, merged worktrees after their observed remote branch is deleted |
 | `wrkx-prune-<name>` | Apply the same safe pruning rules to one repository |
@@ -216,6 +231,7 @@ wrkx {
 ./gradlew wrkx-pull -Pwrkx.branch=feature/new-catalog
 ./gradlew wrkx-checkout -Pwrkx.branch=feature/new-catalog # compatibility alias
 ./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
+./gradlew wrkx-worktree-delete # uses workingBranch from settings.gradle.kts
 ./gradlew wrkx-status          # generate workspace status report
 ./gradlew wrkx-prune           # remove eligible merged worktrees after remote deletion
 ```
@@ -240,7 +256,9 @@ Set `workingBranch` in the DSL or pass `-Pwrkx.branch=<branch>`, then create the
 ./gradlew build -Pwrkx.branch=feature/new-catalog
 ```
 
-Repositories are cloned once as bare repositories under `bare/`. Prefixed branches must use lowercase kebab-case names.
+Repositories are cloned once as bare repositories under `bare/`. Prefixed branch names accept uppercase and lowercase
+letters, numbers, and single hyphens. Prefix matching is case-insensitive and filesystem prefix directories are
+normalized to lowercase.
 The built-in prefixes are `feature`, `bugfix`, `custom`, `poc`, and `release`; `main` and `dev` are valid standalone
 branches. Enabled Gradle builds are included from the selected branch directory.
 
@@ -271,6 +289,46 @@ wrkx {
 Android Studio remains open on `my-workspace/`. Change `workingBranch`, create missing worktrees, and run Gradle Sync;
 the next settings evaluation points every `includeBuild()` at the new branch directory. Worktrees must be created in a
 separate invocation because Gradle selects included builds before tasks execute.
+
+Aggregate `wrkx-clone` and `wrkx-fetch` maintain every repository in `wrkx.json`, including disabled repositories.
+Aggregate `wrkx-worktree`, `wrkx-pull`, and `wrkx-checkout` operate only on repositories enabled in the settings DSL.
+Per-repository tasks remain explicit overrides regardless of enablement.
+
+### Delete and restart a worktree
+
+`wrkx-worktree-delete` targets only the `workingBranch` selected in `settings.gradle.kts`. It safely removes that
+branch's clean managed directories and Git worktree registrations across all configured repositories, including
+disabled repositories that may have been included accidentally. It asks Git to delete the local branch with safe
+`branch -d`; unmerged local branches are retained. Bare repositories, remote branches, and every other branch's
+worktrees are preserved. WRKX never pushes, force-pushes, or deletes remote branches.
+
+Delete only one repository with its generated task:
+
+```bash
+./gradlew wrkx-worktree-delete-application
+```
+
+To restart an unpushed feature after selecting the wrong base:
+
+```kotlin
+wrkx {
+    workingBranch = "Feature/Checkout-Restart"
+    enable(
+        application {
+            baseBranch = "Release/2026.08_Correct-Base"
+        },
+        models,
+    )
+}
+```
+
+```bash
+./gradlew wrkx-worktree-delete
+./gradlew wrkx-worktree
+```
+
+Deletion refuses dirty, locked, or inaccessible worktrees and has no force mode. If `origin/<workingBranch>` exists,
+recreation restores that remote branch; changing `baseBranch` does not rewrite an existing remote branch.
 
 ### Pull behavior
 

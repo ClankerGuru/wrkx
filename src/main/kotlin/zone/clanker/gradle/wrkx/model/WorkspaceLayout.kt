@@ -7,7 +7,8 @@ internal object WorkspaceLayout {
     val defaultBranchPrefixes: Set<String> = setOf("feature", "bugfix", "custom", "poc", "release")
     val standaloneBranches: Set<String> = setOf("main", "dev")
 
-    private val validSegment = Regex("^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    private val validPrefix = Regex("^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    private val validBranchName = Regex("^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
     private val reservedDirectories = standaloneBranches + setOf("bare", "branches")
 
     fun bareRepository(
@@ -23,7 +24,7 @@ internal object WorkspaceLayout {
     ): File = File(repoDir, "${branchDirectory(branch, allowedPrefixes)}/${repo.directoryName}")
 
     fun validatePrefix(prefix: String) {
-        require(validSegment.matches(prefix)) {
+        require(validPrefix.matches(prefix)) {
             "wrkx: Branch prefix '$prefix' must be lowercase kebab-case."
         }
         require(prefix !in reservedDirectories) {
@@ -45,13 +46,14 @@ internal object WorkspaceLayout {
             "wrkx: Branch '$branch' must be '<prefix>/<kebab-case-name>' or one of $standaloneBranches."
         }
         val (prefix, name) = parts
-        require(prefix in allowedPrefixes) {
+        val normalizedPrefix = prefix.lowercase()
+        require(normalizedPrefix in allowedPrefixes) {
             "wrkx: Branch prefix '$prefix' is not allowed. Allowed prefixes: ${allowedPrefixes.sorted()}."
         }
-        require(validSegment.matches(name)) {
-            "wrkx: Branch name '$name' must be lowercase kebab-case."
+        require(validBranchName.matches(name)) {
+            "wrkx: Branch name '$name' must contain only letters, numbers, and single hyphens."
         }
-        return "$prefix/$name"
+        return "$normalizedPrefix/$name"
     }
 
     private const val BRANCH_PART_COUNT = 2

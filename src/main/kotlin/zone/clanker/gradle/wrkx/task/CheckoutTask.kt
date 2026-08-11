@@ -58,7 +58,7 @@ abstract class CheckoutTask
                 GitOperations.checkoutRepo(
                     repo,
                     repoDir,
-                    workingBranch ?: repo.baseBranch.get().value,
+                    workingBranch ?: repo.baseBranch.get(),
                     allowedBranchPrefixes,
                 )
             logger.lifecycle(result)

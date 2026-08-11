@@ -281,7 +281,7 @@ class WrkxSettingsPluginTest :
                     @Suppress("DEPRECATION")
                     gort.category.set("design-system")
                     gort.effectiveCategories shouldBe listOf("design-system")
-                    gort.baseBranch.get().value shouldBe "develop"
+                    gort.baseBranch.get() shouldBe "develop"
                     gort.substitute.get().shouldBeFalse()
 
                     val wrkx = ext.repos.getByName("wrkx")

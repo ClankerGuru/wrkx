@@ -4,6 +4,7 @@ echo ""
 echo "🔨 Running Gradle build (includes detekt + ktlint)..."
 echo "──────────────────────────────────────────"
 
+unset $(git rev-parse --local-env-vars)
 ./gradlew build
 
 if [ $? -ne 0 ]; then

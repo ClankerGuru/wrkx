@@ -7,7 +7,6 @@ import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.testfixtures.ProjectBuilder
 import zone.clanker.gradle.wrkx.model.ArtifactId
 import zone.clanker.gradle.wrkx.model.ArtifactSubstitution
-import zone.clanker.gradle.wrkx.model.GitReference
 import zone.clanker.gradle.wrkx.model.ProjectPath
 import zone.clanker.gradle.wrkx.model.RepositoryUrl
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
@@ -60,7 +59,7 @@ class StatusTaskTest :
                             ),
                         ),
                     )
-                    repo.baseBranch.set(GitReference("main"))
+                    repo.baseBranch.set("main")
                     repo.clonePath.set(File(repoDir, "lib-a"))
                 }
 
@@ -68,7 +67,7 @@ class StatusTaskTest :
                     repo.path.set(RepositoryUrl("org/lib-b"))
                     repo.categories.set(listOf("tools"))
                     repo.substitute.set(false)
-                    repo.baseBranch.set(GitReference("develop"))
+                    repo.baseBranch.set("develop")
                     repo.clonePath.set(File(repoDir, "lib-b"))
                 }
 
