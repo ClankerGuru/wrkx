@@ -42,7 +42,7 @@ pluginManagement {
 }
 
 plugins {
-    id("zone.clanker.gradle.wrkx") version "latest"
+    id("zone.clanker.gradle.wrkx") version "0.41.0"
 }
 
 rootProject.name = "my-workspace"

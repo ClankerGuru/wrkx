@@ -25,7 +25,7 @@ pluginManagement {
 }
 
 plugins {
-    id("zone.clanker.gradle.wrkx") version "<version>"
+    id("zone.clanker.gradle.wrkx") version "0.41.0"
 }
 
 rootProject.name = "my-workspace"
@@ -36,7 +36,7 @@ wrkx {
 }
 ```
 
-Replace `<version>` with a published WRKX version from Maven Central.
+Version `0.41.0` is published on Maven Central.
 
 Define the catalog in root `wrkx.json`:
 
