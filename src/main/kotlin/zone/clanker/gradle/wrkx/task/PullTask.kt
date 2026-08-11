@@ -25,7 +25,6 @@ import javax.inject.Inject
  * @param workingBranchProvider lazy selected branch; an empty value fetches without merging
  * @param allowedBranchPrefixes branch prefixes accepted by the workspace
  * @see CloneTask
- * @see CheckoutTask
  */
 @org.gradle.api.tasks.UntrackedTask(because = "Pulls latest changes for a single repository")
 abstract class PullTask

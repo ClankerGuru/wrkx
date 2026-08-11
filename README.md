@@ -217,8 +217,6 @@ wrkx {
 | `wrkx-fetch-<name>` | Fetch every branch for one existing bare repo |
 | `wrkx-pull` | Fetch enabled repos and merge each baseBranch into its selected clean worktree |
 | `wrkx-pull-<name>` | Fetch one bare repo and merge its baseBranch into its selected clean worktree |
-| `wrkx-checkout` | Compatibility alias for `wrkx-worktree`; processes enabled repos only |
-| `wrkx-checkout-<name>` | Compatibility alias for `wrkx-worktree-<name>` |
 | `wrkx-worktree` | Create branch-scoped worktrees for enabled repositories only |
 | `wrkx-worktree-<name>` | Create a branch-scoped worktree for a single repo |
 | `wrkx-worktree-delete` | Delete the selected branch's worktrees and local branches across the catalog |
@@ -232,7 +230,6 @@ wrkx {
 ./gradlew wrkx-clone-gort      # clone --bare just gort, or fetch it when present
 ./gradlew wrkx-fetch           # fetch all branches without creating worktrees
 ./gradlew wrkx-pull -Pwrkx.branch=feature/new-catalog
-./gradlew wrkx-checkout -Pwrkx.branch=feature/new-catalog # compatibility alias
 ./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
 ./gradlew wrkx-worktree-delete # uses workingBranch from settings.gradle.kts
 ./gradlew wrkx-status          # generate workspace status report
@@ -241,14 +238,9 @@ wrkx {
 
 ### Parallel execution
 
-Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`, `wrkx-worktree`) run git operations across all repos in
+Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-worktree`) run git operations across all repos in
 parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any
 repo fails.
-
-### Checkout compatibility
-
-`wrkx-checkout` no longer switches branches inside an existing checkout. It is a compatibility alias for
-`wrkx-worktree`, which creates or reuses branch-scoped worktrees without disturbing another branch's files.
 
 ### Branch worktrees
 
@@ -264,6 +256,10 @@ letters, numbers, and single hyphens. Prefix matching is case-insensitive and fi
 normalized to lowercase.
 The built-in prefixes are `feature`, `bugfix`, `custom`, `poc`, and `release`; `main` and `dev` are valid standalone
 branches. Enabled Gradle builds are included from the selected branch directory.
+
+Before adding a worktree, WRKX fetches and ensures that each configured `baseBranch` exists locally. A missing local
+base is created from `origin/<baseBranch>` when that remote branch exists. If the base is absent both locally and
+remotely, WRKX creates it locally from the fetched remote default branch, without pushing it.
 
 ```text
 my-workspace-repos/
@@ -294,7 +290,7 @@ the next settings evaluation points every `includeBuild()` at the new branch dir
 separate invocation because Gradle selects included builds before tasks execute.
 
 Aggregate `wrkx-clone` and `wrkx-fetch` maintain every repository in `wrkx.json`, including disabled repositories.
-Aggregate `wrkx-worktree`, `wrkx-pull`, and `wrkx-checkout` operate only on repositories enabled in the settings DSL.
+Aggregate `wrkx-worktree` and `wrkx-pull` operate only on repositories enabled in the settings DSL.
 Per-repository tasks remain explicit overrides regardless of enablement.
 
 ### Delete and restart a worktree
@@ -400,7 +396,7 @@ This affects **all current Kotlin versions** up to and including 2.4.0-Beta1. It
 
 **What works:**
 - JVM project → JVM included build (e.g. a Kotlin/JVM app consuming a Kotlin/JVM library via wrkx substitution)
-- Clone, pull, checkout, status, prune tasks work for all project types
+- Clone, pull, worktree, status, and prune tasks work for all project types
 
 **What doesn't work:**
 - KMP project → any included build with dependency substitution
@@ -557,7 +553,7 @@ Architecture is enforced via [Konsist](https://docs.konsist.lemonappdev.com/) in
 | `WrkxApplyTest` | Gradle TestKit: plugin applies cleanly via settings DSL |
 | `WrkxPluginTest` | Gradle TestKit: enableAll, disableAll, enable, workingBranch, composite build wiring, missing repos warn, empty wrkx.json default |
 | `model/*Test` | Value class validation: RepositoryUrl, GitReference, ArtifactSubstitution, RepositoryEntry, WorkspaceRepository |
-| `task/*Test` | Task behavior: CloneTask, PullTask, CheckoutTask, PruneTask, StatusTask, GitOperations parallel execution |
+| `task/*Test` | Task behavior: CloneTask, PullTask, PruneTask, StatusTask, GitOperations parallel execution |
 
 **Integration tests** (`src/test/CloneIntegrationTest.kt`) -- full clone lifecycle against a Gitea server in Testcontainers. Requires Docker. Skipped automatically when Docker is unavailable.
 
@@ -617,7 +613,6 @@ wrkx/
 │   │   ├── report/
 │   │   │   └── ReposCatalogRenderer.kt <- Markdown report builder for wrkx-status
 │   │   └── task/
-│   │       ├── CheckoutTask.kt  <- git checkout per repo
 │   │       ├── CloneTask.kt     <- git clone per repo
 │   │       ├── PruneTask.kt     <- remove orphaned repo directories
 │   │       ├── PullTask.kt      <- git fetch + merge per repo

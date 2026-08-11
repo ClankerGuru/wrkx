@@ -23,9 +23,6 @@ import java.io.File
  * - pullRepo fetches new commits from the bare repo
  * - pullRepo skips when no remote is configured
  * - pullRepo skips when directory is not cloned
- * - checkoutRepo switches to baseBranch
- * - checkoutRepo detects dirty working directory
- * - checkoutRepo creates workingBranch from baseBranch
  * - runParallel executes work across multiple repos concurrently
  */
 class GitOperationsTest :
@@ -221,6 +218,152 @@ class GitOperationsTest :
             baseDir.deleteRecursively()
         }
 
+        given("a configured base branch that appears on origin after the initial clone") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "remote-base")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val baseBranch = "Release/Remote-Base"
+            val repo = createTestRepo(project.objects, remote.absolutePath, baseBranch = baseBranch)
+            GitOperations.cloneRepo(repo, repoDir) shouldStartWith "OK"
+            val setup = File(baseDir, "remote-base-setup")
+            gitExec("git", "clone", remote.absolutePath, setup.absolutePath)
+            gitExec("git", "-C", setup.absolutePath, "checkout", "-b", baseBranch)
+            File(setup, "remote-base.txt").writeText("remote base")
+            gitExec("git", "-C", setup.absolutePath, "add", ".")
+            gitExec("git", "-C", setup.absolutePath, "commit", "-m", "Add remote base")
+            gitExec("git", "-C", setup.absolutePath, "push", "origin", baseBranch)
+
+            `when`("a worktree is created after fetching the new remote base") {
+                val result = GitOperations.createWorktree(repo, repoDir, "Feature/From-Remote-Base")
+                val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+
+                then("the remote base is created locally and used for the worktree") {
+                    result shouldStartWith "OK"
+                    gitOutput(
+                        "git",
+                        "--git-dir=${bareDir.absolutePath}",
+                        "rev-parse",
+                        "refs/heads/$baseBranch",
+                    ) shouldBe
+                        gitOutput(
+                            "git",
+                            "--git-dir=${bareDir.absolutePath}",
+                            "rev-parse",
+                            "refs/remotes/origin/$baseBranch",
+                        )
+                    WorkspaceLayout
+                        .worktree(repoDir, "Feature/From-Remote-Base", repo)
+                        .resolve("remote-base.txt")
+                        .shouldExist()
+                }
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("a configured base branch that does not exist locally or remotely") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "missing-base")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val baseBranch = "Release/Local-Base"
+            val repo = createTestRepo(project.objects, remote.absolutePath, baseBranch = baseBranch)
+
+            `when`("a worktree is created") {
+                val result = GitOperations.createWorktree(repo, repoDir, "Feature/From-Local-Base")
+                val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+
+                then("the base is created locally from the fetched remote default branch") {
+                    result shouldStartWith "OK"
+                    gitOutput(
+                        "git",
+                        "--git-dir=${bareDir.absolutePath}",
+                        "rev-parse",
+                        "refs/heads/$baseBranch",
+                    ) shouldBe
+                        gitOutput(
+                            "git",
+                            "--git-dir=${bareDir.absolutePath}",
+                            "rev-parse",
+                            "refs/remotes/origin/main",
+                        )
+                    (
+                        gitExec(
+                            "git",
+                            "--git-dir=${bareDir.absolutePath}",
+                            "show-ref",
+                            "--verify",
+                            "refs/remotes/origin/$baseBranch",
+                        ) == 0
+                    ) shouldBe false
+                }
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("a missing base branch and a remote without a valid default HEAD") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "missing-default")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath, baseBranch = "Release/Missing-Base")
+            GitOperations.cloneRepo(repo, repoDir) shouldStartWith "OK"
+            val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+            gitExec("git", "--git-dir=${bareDir.absolutePath}", "remote", "set-head", "origin", "--auto") shouldBe 0
+            gitExec(
+                "git",
+                "--git-dir=${remote.absolutePath}",
+                "symbolic-ref",
+                "HEAD",
+                "refs/heads/missing",
+            ) shouldBe 0
+
+            then("stale local origin HEAD is rejected when fresh default discovery fails") {
+                val result = GitOperations.createWorktree(repo, repoDir, "Feature/Missing-Default")
+                result shouldContain "default branch could not be determined"
+                WorkspaceLayout.worktree(repoDir, "Feature/Missing-Default", repo).shouldNotExist()
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("an invalid configured base branch") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "invalid-base")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath, baseBranch = "-f")
+
+            then("worktree creation rejects it before creating a local branch or worktree") {
+                val result = GitOperations.createWorktree(repo, repoDir, "Feature/Invalid-Base")
+                result shouldContain "not a valid Git branch name"
+                WorkspaceLayout.worktree(repoDir, "Feature/Invalid-Base", repo).shouldNotExist()
+            }
+
+            baseDir.deleteRecursively()
+        }
+
+        given("a valid missing base branch blocked by an existing ref namespace") {
+            val baseDir = tempDir()
+            val remote = createBareRepo(baseDir, "blocked-base")
+            val repoDir = File(baseDir, "repos")
+            val project = ProjectBuilder.builder().build()
+            val repo = createTestRepo(project.objects, remote.absolutePath, baseBranch = "Release/New-Base")
+            GitOperations.cloneRepo(repo, repoDir) shouldStartWith "OK"
+            val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+            gitExec("git", "--git-dir=${bareDir.absolutePath}", "branch", "Release", "origin/main") shouldBe 0
+
+            then("worktree creation reports the local branch failure without creating a directory") {
+                val result = GitOperations.createWorktree(repo, repoDir, "Feature/Blocked-Base")
+                result shouldContain "Could not create local base branch"
+                WorkspaceLayout.worktree(repoDir, "Feature/Blocked-Base", repo).shouldNotExist()
+            }
+
+            baseDir.deleteRecursively()
+        }
+
         given("an existing worktree") {
             val baseDir = tempDir()
             val remote = createBareRepo(baseDir, "existing-worktree")
@@ -230,10 +373,19 @@ class GitOperationsTest :
             GitOperations.createWorktree(repo, repoDir, "feature/alpha") shouldStartWith "OK"
 
             `when`("the same worktree is requested again") {
+                val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+                gitExec("git", "--git-dir=${bareDir.absolutePath}", "branch", "-D", "main") shouldBe 0
                 val result = GitOperations.createWorktree(repo, repoDir, "feature/alpha")
 
-                then("it is skipped") {
+                then("its missing local base is restored before the worktree is skipped") {
                     result shouldStartWith "SKIP"
+                    gitExec(
+                        "git",
+                        "--git-dir=${bareDir.absolutePath}",
+                        "show-ref",
+                        "--verify",
+                        "refs/heads/main",
+                    ) shouldBe 0
                 }
             }
 
@@ -277,55 +429,6 @@ class GitOperationsTest :
                     GitOperations.createWorktree(repo, repoDir, "unknown/new-renderer")
                 }
                 WorkspaceLayout.bareRepository(repoDir, repo).shouldNotExist()
-            }
-
-            baseDir.deleteRecursively()
-        }
-
-        given("checkoutRepo with a bare remote") {
-            val baseDir = tempDir()
-            val bareRepo = createBareRepo(baseDir, "checkout-ops")
-            val repoDir = File(baseDir, "repos").apply { mkdirs() }
-            val project = ProjectBuilder.builder().build()
-            val repo =
-                createTestRepo(
-                    project.objects,
-                    bareRepo.absolutePath,
-                    baseBranch = "main",
-                )
-
-            `when`("checkout is requested for the base branch") {
-                val result = GitOperations.checkoutRepo(repo, repoDir, "")
-
-                then("it creates the main worktree and returns OK") {
-                    result shouldStartWith "OK"
-                    val branch =
-                        gitOutput(
-                            "git",
-                            "-C",
-                            WorkspaceLayout.worktree(repoDir, "main", repo).absolutePath,
-                            "branch",
-                            "--show-current",
-                        )
-                    branch shouldBe "main"
-                }
-            }
-
-            `when`("workingBranch does not exist yet") {
-                val result = GitOperations.checkoutRepo(repo, repoDir, "feature/new-ops")
-
-                then("creates a separate worktree from origin/baseBranch") {
-                    result shouldStartWith "OK"
-                    val branch =
-                        gitOutput(
-                            "git",
-                            "-C",
-                            WorkspaceLayout.worktree(repoDir, "feature/new-ops", repo).absolutePath,
-                            "branch",
-                            "--show-current",
-                        )
-                    branch shouldBe "feature/new-ops"
-                }
             }
 
             baseDir.deleteRecursively()

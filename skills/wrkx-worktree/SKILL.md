@@ -19,10 +19,12 @@ You may set `workingBranch` in `settings.gradle.kts` instead of passing the prop
 
 - The aggregate task processes enabled repositories only; the generated per-repository task is an explicit override.
 - Missing bare repositories are cloned and existing bare repositories are fetched first.
+- A missing local `baseBranch` is created from `origin/<baseBranch>` when available. If absent remotely too, it is
+  created locally from the fetched remote default branch; WRKX does not push it.
 - When the expected target path already exists, WRKX returns `SKIP` without validating its Git registration or checked
   out branch. Inspect an unexpected pre-existing path before continuing.
 - A new branch starts from `origin/<workingBranch>` when that remote branch exists, otherwise from the repository's
-  configured `origin/<baseBranch>`, then from an existing local `<baseBranch>` as the final fallback.
+  configured base branch.
 - Worktrees use `<workspace>-repos/<normalized-prefix>/<branch-name>/<directory-name>`.
 
 ## Branch rules

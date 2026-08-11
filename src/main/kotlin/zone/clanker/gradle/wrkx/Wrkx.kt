@@ -14,7 +14,6 @@ import org.gradle.api.provider.ProviderFactory
 import zone.clanker.gradle.wrkx.model.RepositoryEntry
 import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
-import zone.clanker.gradle.wrkx.task.CheckoutTask
 import zone.clanker.gradle.wrkx.task.CloneTask
 import zone.clanker.gradle.wrkx.task.GitOperations
 import zone.clanker.gradle.wrkx.task.PruneTask
@@ -64,9 +63,6 @@ data object Wrkx {
     /** Task name: fetch all bare repos and merge base branches into selected worktrees. */
     const val TASK_PULL = "wrkx-pull"
 
-    /** Task name: compatibility alias for creating selected branch worktrees. */
-    const val TASK_CHECKOUT = "wrkx-checkout"
-
     /** Task name: create branch-scoped worktrees backed by bare repositories. */
     const val TASK_WORKTREE = "wrkx-worktree"
 
@@ -113,7 +109,7 @@ data object Wrkx {
             /** Base directory where repos are cloned (sibling to the project). */
             abstract val baseDir: DirectoryProperty
 
-            /** Branch to checkout for enabled repos when running wrkx-checkout. */
+            /** Branch used for enabled repositories' worktrees. */
             var workingBranch: String? = null
 
             private val extraBranchPrefixes = linkedSetOf<String>()
@@ -462,7 +458,6 @@ data object Wrkx {
                         |  $TASK_CLONE       Create or fetch shared bare repositories; no worktrees are changed
                         |  $TASK_FETCH       Fetch all branches and prune deleted remote references
                         |  $TASK_PULL        Fetch remotes and merge base branches into selected clean worktrees
-                        |  $TASK_CHECKOUT    Compatibility alias for $TASK_WORKTREE
                         |  $TASK_WORKTREE    Create or reuse worktrees for -P$BRANCH_PROP or workingBranch
                         |  $TASK_WORKTREE_DELETE Delete only the selected branch's worktrees and local branches
                         |  $TASK_STATUS      Write bare repository, category, enablement, and substitution status
@@ -499,14 +494,6 @@ data object Wrkx {
                     tasks.register(
                         "$TASK_PULL-$safeName",
                         PullTask::class.java,
-                        repo,
-                        repoDir,
-                        provider { extension.activeBranch() ?: "" },
-                        extension.allowedBranchPrefixes,
-                    )
-                    tasks.register(
-                        "$TASK_CHECKOUT-$safeName",
-                        CheckoutTask::class.java,
                         repo,
                         repoDir,
                         provider { extension.activeBranch() ?: "" },
@@ -612,19 +599,6 @@ data object Wrkx {
                                 extension.activeBranch(),
                                 extension.allowedBranchPrefixes,
                             )
-                        }
-                    }
-                }
-
-                tasks.register(TASK_CHECKOUT).configure { task ->
-                    task.group = GROUP
-                    task.description =
-                        "Compatibility alias for wrkx-worktree; create or reuse the selected branch worktree for " +
-                        "every enabled repository without changing another worktree"
-                    task.doLast {
-                        val wb = extension.activeBranch() ?: ""
-                        GitOperations.runParallel(repos.filter(WorkspaceRepository::enabled), "checkout") { repo ->
-                            GitOperations.checkoutRepo(repo, repoDir, wb, extension.allowedBranchPrefixes)
                         }
                     }
                 }

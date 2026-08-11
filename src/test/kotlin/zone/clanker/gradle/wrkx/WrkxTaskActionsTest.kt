@@ -10,7 +10,6 @@ import org.gradle.api.file.BuildLayout
 import org.gradle.api.initialization.Settings
 import org.gradle.testfixtures.ProjectBuilder
 import zone.clanker.gradle.wrkx.model.RepositoryUrl
-import zone.clanker.gradle.wrkx.task.CheckoutTask
 import zone.clanker.gradle.wrkx.task.CloneTask
 import zone.clanker.gradle.wrkx.task.PruneTask
 import zone.clanker.gradle.wrkx.task.PullTask
@@ -61,8 +60,6 @@ class WrkxTaskActionsTest :
                 execute(project.tasks.getByName(Wrkx.TASK_FETCH))
                 execute(project.tasks.getByName(Wrkx.TASK_WORKTREE))
                 execute(project.tasks.getByName("${Wrkx.TASK_WORKTREE}-task-actions"))
-                (project.tasks.getByName("${Wrkx.TASK_CHECKOUT}-task-actions") as CheckoutTask).checkout()
-                execute(project.tasks.getByName(Wrkx.TASK_CHECKOUT))
                 (project.tasks.getByName("${Wrkx.TASK_PULL}-task-actions") as PullTask).pull()
                 execute(project.tasks.getByName(Wrkx.TASK_PULL))
                 execute(project.tasks.getByName("${Wrkx.TASK_PRUNE}-task-actions"))
