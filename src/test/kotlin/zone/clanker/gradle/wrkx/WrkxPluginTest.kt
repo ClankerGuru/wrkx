@@ -290,5 +290,87 @@ class WrkxPluginTest :
 
                 projectDir.deleteRecursively()
             }
+
+            `when`("DSL selects a branch with an unknown prefix") {
+                val projectDir =
+                    tempProject().withSettings(
+                        """
+                        workingBranch = "unknown/new-catalog"
+                        enableAll()
+                        """.trimIndent(),
+                    )
+                projectDir.resolve("wrkx.json").writeText(
+                    """[{"name": "gort", "path": "git@github.com:ClankerGuru/gort.git"}]""",
+                )
+
+                then("settings evaluation fails with the allowed prefixes") {
+                    val result = projectDir.gradle("wrkx").buildAndFail()
+                    result.output shouldContain "Branch prefix 'unknown' is not allowed"
+                    result.output shouldContain "Allowed prefixes"
+                }
+
+                projectDir.deleteRecursively()
+            }
+
+            `when`("DSL adds and selects a custom branch prefix") {
+                val projectDir =
+                    tempProject().withSettings(
+                        """
+                        allowBranchPrefixes("experiment")
+                        workingBranch = "experiment/new-renderer"
+                        enableAll()
+                        """.trimIndent(),
+                    )
+                val reposDir = File(projectDir.parentFile, "${projectDir.name}-repos")
+                File(reposDir, "experiment/new-renderer/gort").apply {
+                    mkdirs()
+                    resolve("settings.gradle.kts").writeText("rootProject.name = \"gort\"")
+                }
+                projectDir.resolve("wrkx.json").writeText(
+                    """[{"name": "gort", "path": "git@github.com:ClankerGuru/gort.git"}]""",
+                )
+
+                then("Gradle includes the custom-prefix worktree") {
+                    val result = projectDir.gradle("wrkx").build()
+                    result.task(":wrkx")?.outcome shouldBe TaskOutcome.SUCCESS
+                    result.output shouldNotContain "not cloned at"
+                }
+
+                projectDir.deleteRecursively()
+                reposDir.deleteRecursively()
+            }
+
+            `when`("DSL configures and enables a repository inline") {
+                val projectDir = tempProject()
+                projectDir.resolve("wrkx.json").writeText(
+                    """
+                    [
+                      {"name": "application", "path": "git@github.com:example/application.git"},
+                      {"name": "models", "path": "git@github.com:example/models.git"}
+                    ]
+                    """.trimIndent(),
+                )
+                projectDir.withSettings(
+                    """
+                    enable(
+                        application {
+                            baseBranch = "Release/2026.08_Feature-1"
+                            categories = listOf("application", "shared-app")
+                        },
+                        models,
+                    )
+                    """.trimIndent(),
+                )
+
+                then("the configured repository is enabled with the exact base branch") {
+                    val result = projectDir.gradle("wrkx-status").build()
+                    result.task(":wrkx-status")?.outcome shouldBe TaskOutcome.SUCCESS
+                    val status = projectDir.resolve(".wrkx/repos.md").readText()
+                    status shouldContain "`Release/2026.08_Feature-1`"
+                    status shouldContain "application, shared-app"
+                }
+
+                projectDir.deleteRecursively()
+            }
         }
     })

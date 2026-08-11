@@ -112,10 +112,8 @@ class CloneIntegrationTest :
         given("a Gitea server with two repositories") {
 
             /**
-             * CLONE: Verifies that wrkx-clone fetches a repository from the remote
-             * and places it in the repos directory with the correct directory name
-             * derived from the path URL. The .git directory must exist, proving
-             * it's a valid Git checkout.
+             * CLONE: Verifies that wrkx-clone creates a bare repository under bare/
+             * and never creates a normal working checkout.
              */
             `when`("wrkx-clone is run with one repo in wrkx.json") {
                 val projectDir =
@@ -132,10 +130,23 @@ class CloneIntegrationTest :
                     result.task(":wrkx-clone")?.outcome shouldBe TaskOutcome.SUCCESS
                 }
 
-                then("the repo directory exists with a .git folder") {
-                    val clonedRepo = File(reposDir, "test-repo")
-                    clonedRepo.shouldExist()
-                    File(clonedRepo, ".git").shouldExist()
+                then("only a valid bare repository exists") {
+                    val bareRepo = File(reposDir, "bare/test-repo.git")
+                    bareRepo.shouldExist()
+                    File(reposDir, "test-repo").shouldNotExist()
+                    val process =
+                        ProcessBuilder(
+                            "git",
+                            "--git-dir=${bareRepo.absolutePath}",
+                            "rev-parse",
+                            "--is-bare-repository",
+                        ).redirectErrorStream(true)
+                            .start()
+                    process.inputStream
+                        .bufferedReader()
+                        .readText()
+                        .trim() shouldBe "true"
+                    process.waitFor() shouldBe 0
                 }
 
                 projectDir.deleteRecursively()
@@ -143,8 +154,8 @@ class CloneIntegrationTest :
             }
 
             /**
-             * CLONE SKIP: Verifies that if a repo already exists on disk,
-             * wrkx-clone skips it without error.
+             * CLONE UPDATE: Verifies that an existing bare repository is fetched
+             * without creating a normal checkout.
              */
             `when`("wrkx-clone is run twice") {
                 val projectDir =
@@ -158,8 +169,10 @@ class CloneIntegrationTest :
                 gradle(projectDir, "wrkx-clone")
                 val result = gradle(projectDir, "wrkx-clone")
 
-                then("the second run succeeds (skips existing)") {
+                then("the second run succeeds and keeps the bare-only layout") {
                     result.task(":wrkx-clone")?.outcome shouldBe TaskOutcome.SUCCESS
+                    File(reposDir, "bare/test-repo.git").shouldExist()
+                    File(reposDir, "test-repo").shouldNotExist()
                 }
 
                 projectDir.deleteRecursively()
@@ -199,11 +212,8 @@ class CloneIntegrationTest :
                 projectDir.deleteRecursively()
             }
 
-            /**
-             * CLEAN: Verifies that wrkx-prune removes directories that are
-             * not defined in wrkx.json, while preserving repos that are.
-             */
-            `when`("wrkx-prune is run with an orphan directory") {
+            /** Verifies that worktree pruning never deletes unrelated directories. */
+            `when`("wrkx-prune is run with an unrelated directory") {
                 val projectDir =
                     createTestProject(
                         """
@@ -214,23 +224,16 @@ class CloneIntegrationTest :
                 val reposDir = File(projectDir.parentFile, "${projectDir.name}-repos")
                 reposDir.mkdirs()
 
-                // Create an orphan directory that's not in wrkx.json
-                val orphan = File(reposDir, "orphan-repo").apply { mkdirs() }
-                // Create the expected directory so clean has something to compare against
-                val expected = File(reposDir, "test-repo").apply { mkdirs() }
+                val unrelated = File(reposDir, "unrelated-directory").apply { mkdirs() }
 
                 val result = gradle(projectDir, "wrkx-prune")
 
-                then("the clean task succeeds") {
+                then("the prune task succeeds") {
                     result.task(":wrkx-prune")?.outcome shouldBe TaskOutcome.SUCCESS
                 }
 
-                then("the orphan directory is removed") {
-                    orphan.shouldNotExist()
-                }
-
-                then("the expected directory is preserved") {
-                    expected.shouldExist()
+                then("the unrelated directory is preserved") {
+                    unrelated.shouldExist()
                 }
 
                 projectDir.deleteRecursively()

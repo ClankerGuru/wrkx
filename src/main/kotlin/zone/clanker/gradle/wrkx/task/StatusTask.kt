@@ -35,7 +35,9 @@ abstract class StatusTask
     ) : DefaultTask() {
         init {
             group = Wrkx.GROUP
-            description = "Generate workspace status report at ${Wrkx.OUTPUT_DIR}/repos.md"
+            description =
+                "Inspect configured bare repositories and write categories, enablement, branches, and dependency " +
+                "substitutions to ${Wrkx.OUTPUT_DIR}/repos.md; does not modify Git state"
         }
 
         /**

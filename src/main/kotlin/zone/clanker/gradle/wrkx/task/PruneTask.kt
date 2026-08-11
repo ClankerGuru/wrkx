@@ -9,20 +9,15 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Removes cloned repo directories that are not defined in `wrkx.json`.
- *
- * Compares directories on disk in the repos directory against the
- * [repos] container. Any directory that doesn't match a known repo
- * is deleted. Directories that match are never touched.
+ * Removes clean WRKX worktrees after their remote branch is deleted and fully merged.
  *
  * ```bash
  * ./gradlew wrkx-prune
  * ```
  *
- * Fails if the repos directory doesn't exist — run [CloneTask] first.
- *
  * @param repos the container of all registered [WorkspaceRepository] entries
- * @param repoDir base directory where repos are cloned
+ * @param repoDir base directory containing shared bare repositories and worktrees
+ * @param allowedBranchPrefixes branch prefixes managed by this workspace
  * @see StatusTask
  * @see CloneTask
  */
@@ -32,58 +27,26 @@ abstract class PruneTask
     constructor(
         private val repos: NamedDomainObjectContainer<WorkspaceRepository>,
         private val repoDir: File,
+        private val allowedBranchPrefixes: Set<String>,
     ) : DefaultTask() {
         init {
             group = Wrkx.GROUP
-            description = "Remove repo directories not defined in ${Wrkx.CONFIG_FILE}"
+            description =
+                "Fetch every repository, then remove only clean WRKX worktrees whose branch was previously observed " +
+                "on origin, is now deleted there, and is fully merged into origin/baseBranch"
         }
 
         /**
-         * Scan the repos directory and remove any subdirectory that does not correspond
-         * to a repository defined in `wrkx.json`.
-         *
-         * ```bash
-         * ./gradlew wrkx-prune
-         * ```
+         * Fetch remote state and safely remove worktrees that satisfy every pruning condition.
          */
         @TaskAction
         fun prune() {
-            check(repoDir.exists()) {
-                """
-                wrkx: Repos directory does not exist at ${repoDir.absolutePath}.
-                Run './gradlew ${Wrkx.TASK_CLONE}' to clone repos first.
-                If the directory was moved, update the project layout so the repos directory is at the expected location.
-                """.trimIndent()
-            }
-
-            val knownDirectoryNames = repos.map { it.directoryName }.toSet()
-
-            val dirsOnDisk =
-                repoDir
-                    .listFiles()
-                    ?.filter { it.isDirectory && !it.name.startsWith(".") }
-                    ?: emptyList()
-
-            val orphans = dirsOnDisk.filter { it.name !in knownDirectoryNames }
-
-            if (orphans.isEmpty()) {
-                logger.lifecycle(
-                    "wrkx: No orphaned repos found. " +
-                        "All directories in ${repoDir.absolutePath} match ${Wrkx.CONFIG_FILE}.",
-                )
+            if (!repoDir.exists()) {
+                logger.lifecycle("wrkx: No repository directory exists at ${repoDir.absolutePath}; nothing to prune.")
                 return
             }
-
-            orphans.forEach { dir ->
-                logger.lifecycle(
-                    """
-                    wrkx: Removing '${dir.name}' — not defined in ${Wrkx.CONFIG_FILE}.
-                    Directory: ${dir.absolutePath}
-                    """.trimIndent(),
-                )
-                dir.deleteRecursively()
+            GitOperations.runParallel(repos.toList(), "prune") { repo ->
+                GitOperations.pruneRepo(repo, repoDir, allowedBranchPrefixes)
             }
-
-            logger.lifecycle("wrkx: Pruned ${orphans.size} orphaned repo(s) from ${repoDir.absolutePath}")
         }
     }

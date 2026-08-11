@@ -7,7 +7,6 @@ import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.testfixtures.ProjectBuilder
 import zone.clanker.gradle.wrkx.model.ArtifactId
 import zone.clanker.gradle.wrkx.model.ArtifactSubstitution
-import zone.clanker.gradle.wrkx.model.GitReference
 import zone.clanker.gradle.wrkx.model.ProjectPath
 import zone.clanker.gradle.wrkx.model.RepositoryUrl
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
@@ -45,12 +44,12 @@ class StatusTaskTest :
                 val repoDir = tempDir()
                 val container = createContainer()
 
-                // One repo "exists" on disk
-                File(repoDir, "lib-a").mkdirs()
+                // One bare repo "exists" on disk
+                File(repoDir, "bare/lib-a.git").mkdirs()
 
                 container.register("libA") { repo ->
                     repo.path.set(RepositoryUrl("org/lib-a"))
-                    repo.category.set("core")
+                    repo.categories.set(listOf("core", "shared"))
                     repo.substitute.set(true)
                     repo.substitutions.set(
                         listOf(
@@ -60,15 +59,15 @@ class StatusTaskTest :
                             ),
                         ),
                     )
-                    repo.baseBranch.set(GitReference("main"))
+                    repo.baseBranch.set("main")
                     repo.clonePath.set(File(repoDir, "lib-a"))
                 }
 
                 container.register("libB") { repo ->
                     repo.path.set(RepositoryUrl("org/lib-b"))
-                    repo.category.set("tools")
+                    repo.categories.set(listOf("tools"))
                     repo.substitute.set(false)
-                    repo.baseBranch.set(GitReference("develop"))
+                    repo.baseBranch.set("develop")
                     repo.clonePath.set(File(repoDir, "lib-b"))
                 }
 
@@ -100,8 +99,8 @@ class StatusTaskTest :
 
                 then("shows clone status correctly") {
                     val content = output.readText()
-                    // libA exists on disk
-                    content shouldContain "| 1 | `libA` | `org/lib-a` | core | yes |"
+                    // libA has a bare repository on disk
+                    content shouldContain "| 1 | `libA` | `org/lib-a` | core, shared | yes |"
                     // libB does not
                     content shouldContain "| 2 | `libB` | `org/lib-b` | tools | no |"
                 }
@@ -114,6 +113,7 @@ class StatusTaskTest :
                 then("shows category breakdown") {
                     val content = output.readText()
                     content shouldContain "### core"
+                    content shouldContain "### shared"
                     content shouldContain "### tools"
                 }
 

@@ -7,6 +7,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.file.shouldExist
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
 import org.gradle.api.file.BuildLayout
@@ -257,7 +258,7 @@ class WrkxSettingsPluginTest :
                       {
                         "name": "wrkx",
                         "path": "git@github.com:ClankerGuru/wrkx.git",
-                        "category": "tooling",
+                        "categories": ["tooling", "shared"],
                         "substitute": true,
                         "substitutions": ["com.example:wrkx,wrkx"]
                       }
@@ -277,12 +278,15 @@ class WrkxSettingsPluginTest :
                     val gort = ext.repos.getByName("gort")
                     gort.path.get().value shouldBe "git@github.com:ClankerGuru/gort.git"
                     gort.category.get() shouldBe "ui"
-                    gort.baseBranch.get().value shouldBe "develop"
+                    @Suppress("DEPRECATION")
+                    gort.category.set("design-system")
+                    gort.effectiveCategories shouldBe listOf("design-system")
+                    gort.baseBranch.get() shouldBe "develop"
                     gort.substitute.get().shouldBeFalse()
 
                     val wrkx = ext.repos.getByName("wrkx")
                     wrkx.path.get().value shouldBe "git@github.com:ClankerGuru/wrkx.git"
-                    wrkx.category.get() shouldBe "tooling"
+                    wrkx.categories.get() shouldBe listOf("tooling", "shared")
                     wrkx.substitute.get().shouldBeTrue()
                     wrkx.substitutions.get() shouldHaveSize 1
 
@@ -415,17 +419,19 @@ class WrkxSettingsPluginTest :
                 val ext = createExtension()
                 ext.workingBranch = "feature/test"
 
-                then("registers clone, pull, and checkout lifecycle tasks") {
+                then("registers clone, pull, and worktree lifecycle tasks") {
                     with(plugin) {
                         project.registerLifecycleTasks(ext, tmpDir)
                     }
                     project.tasks.findByName(Wrkx.TASK_CLONE).shouldNotBeNull()
                     project.tasks.findByName(Wrkx.TASK_PULL).shouldNotBeNull()
-                    project.tasks.findByName(Wrkx.TASK_CHECKOUT).shouldNotBeNull()
+                    project.tasks.findByName(Wrkx.TASK_WORKTREE).shouldNotBeNull()
 
                     project.tasks.findByName(Wrkx.TASK_CLONE)!!.group shouldBe Wrkx.GROUP
+                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "shared bare repositories"
+                    project.tasks.findByName(Wrkx.TASK_CLONE)!!.description shouldContain "<workspace>-repos/bare"
                     project.tasks.findByName(Wrkx.TASK_PULL)!!.group shouldBe Wrkx.GROUP
-                    project.tasks.findByName(Wrkx.TASK_CHECKOUT)!!.group shouldBe Wrkx.GROUP
+                    project.tasks.findByName(Wrkx.TASK_WORKTREE)!!.group shouldBe Wrkx.GROUP
                 }
 
                 tmpDir.deleteRecursively()
@@ -447,7 +453,7 @@ class WrkxSettingsPluginTest :
                     with(plugin) {
                         project.registerLifecycleTasks(ext, tmpDir)
                     }
-                    project.tasks.findByName(Wrkx.TASK_CHECKOUT).shouldNotBeNull()
+                    project.tasks.findByName(Wrkx.TASK_WORKTREE).shouldNotBeNull()
                 }
 
                 tmpDir.deleteRecursively()
@@ -494,13 +500,16 @@ class WrkxSettingsPluginTest :
                     )
                 }
 
-                then("registers per-repo clone, pull, checkout tasks") {
+                then("registers per-repo clone, pull, and worktree tasks") {
                     with(plugin) {
                         project.registerPerRepoTasks(ext, tmpDir)
                     }
                     project.tasks.findByName("${Wrkx.TASK_CLONE}-gort").shouldNotBeNull()
+                    project.tasks
+                        .findByName("${Wrkx.TASK_CLONE}-gort")!!
+                        .description shouldContain "shared bare repository"
                     project.tasks.findByName("${Wrkx.TASK_PULL}-gort").shouldNotBeNull()
-                    project.tasks.findByName("${Wrkx.TASK_CHECKOUT}-gort").shouldNotBeNull()
+                    project.tasks.findByName("${Wrkx.TASK_WORKTREE}-gort").shouldNotBeNull()
                 }
 
                 tmpDir.deleteRecursively()
@@ -528,7 +537,7 @@ class WrkxSettingsPluginTest :
                     with(plugin) {
                         project.registerPerRepoTasks(ext, tmpDir)
                     }
-                    project.tasks.findByName("${Wrkx.TASK_CHECKOUT}-lib").shouldNotBeNull()
+                    project.tasks.findByName("${Wrkx.TASK_WORKTREE}-lib").shouldNotBeNull()
                 }
 
                 tmpDir.deleteRecursively()

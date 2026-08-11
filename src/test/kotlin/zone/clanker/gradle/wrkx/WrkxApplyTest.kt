@@ -210,7 +210,7 @@ class WrkxApplyTest :
                     project.tasks.findByName(Wrkx.TASK_CATALOG).shouldNotBeNull()
                     project.tasks.findByName(Wrkx.TASK_CLONE).shouldNotBeNull()
                     project.tasks.findByName(Wrkx.TASK_PULL).shouldNotBeNull()
-                    project.tasks.findByName(Wrkx.TASK_CHECKOUT).shouldNotBeNull()
+                    project.tasks.findByName(Wrkx.TASK_WORKTREE).shouldNotBeNull()
                     project.tasks.findByName(Wrkx.TASK_STATUS).shouldNotBeNull()
                     project.tasks.findByName(Wrkx.TASK_PRUNE).shouldNotBeNull()
                 }
@@ -265,6 +265,7 @@ class WrkxApplyTest :
                         .builder()
                         .build()
                 val ext = createExtension()
+                ext.workingBranch = "feature/test"
 
                 with(plugin) {
                     project.registerLifecycleTasks(ext, tmpDir)
@@ -280,9 +281,9 @@ class WrkxApplyTest :
                     pullTask.actions.forEach { it.execute(pullTask) }
                 }
 
-                then("checkout task doLast runs with empty repos") {
-                    val checkoutTask = project.tasks.findByName(Wrkx.TASK_CHECKOUT)!!
-                    checkoutTask.actions.forEach { it.execute(checkoutTask) }
+                then("worktree task doLast runs with empty repos") {
+                    val worktreeTask = project.tasks.findByName(Wrkx.TASK_WORKTREE)!!
+                    worktreeTask.actions.forEach { it.execute(worktreeTask) }
                 }
 
                 tmpDir.deleteRecursively()

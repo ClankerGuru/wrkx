@@ -3,7 +3,6 @@ package zone.clanker.gradle.wrkx
 import org.gradle.api.model.ObjectFactory
 import org.gradle.testfixtures.ProjectBuilder
 import zone.clanker.gradle.wrkx.model.ArtifactSubstitution
-import zone.clanker.gradle.wrkx.model.GitReference
 import zone.clanker.gradle.wrkx.model.RepositoryUrl
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 
@@ -23,10 +22,12 @@ object TestFactory {
     ): WorkspaceRepository {
         val repo = objects.newInstance(WorkspaceRepository::class.java, name)
         repo.path.set(RepositoryUrl(path))
+        repo.categories.set(emptyList())
+        @Suppress("DEPRECATION")
         repo.category.set(category)
         repo.substitutions.set(substitutions)
         repo.substitute.set(substitute)
-        repo.baseBranch.set(GitReference(baseBranch))
+        repo.baseBranch.set(baseBranch)
         return repo
     }
 }

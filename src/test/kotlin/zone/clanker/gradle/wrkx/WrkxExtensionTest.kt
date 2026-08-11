@@ -176,6 +176,87 @@ class WrkxExtensionTest :
                     ext.workingBranch shouldBe "feature/test"
                 }
             }
+
+            `when`("a working branch and base directory are set") {
+                val ext = createExtension()
+                val baseDir = File("/workspace/repos")
+                ext.baseDir.set(baseDir)
+                ext.workingBranch = "feature/test"
+                ext.addRepo("gort", "org/gort", File(baseDir, "gort"))
+
+                then("checkoutPath resolves the branch worktree") {
+                    ext.checkoutPath(ext["gort"]) shouldBe
+                        File(baseDir, "feature/test/gort")
+                }
+            }
+
+            `when`("a standalone branch is selected") {
+                val ext = createExtension()
+                val baseDir = File("/workspace/repos")
+                ext.baseDir.set(baseDir)
+                ext.workingBranch = "dev"
+                ext.addRepo("gort", "org/gort", File(baseDir, "gort"))
+
+                then("checkoutPath resolves the standalone directory") {
+                    ext.checkoutPath(ext["gort"]) shouldBe File(baseDir, "dev/gort")
+                }
+            }
+
+            `when`("an unknown prefix is selected") {
+                val ext = createExtension()
+                ext.workingBranch = "experiment/test"
+
+                then("activeBranch rejects it") {
+                    shouldThrow<IllegalArgumentException> { ext.activeBranch() }
+                }
+            }
+        }
+
+        given("allowBranchPrefixes") {
+            `when`("additional prefixes are configured") {
+                val ext = createExtension()
+                val baseDir = File("/workspace/repos")
+                ext.baseDir.set(baseDir)
+                ext.allowBranchPrefixes("experiment", "spike", "experiment")
+                ext.workingBranch = "experiment/new-renderer"
+                ext.addRepo("gort", "org/gort", File(baseDir, "gort"))
+
+                then("the defaults remain and duplicates are ignored") {
+                    ext.allowedBranchPrefixes shouldBe
+                        setOf("feature", "bugfix", "custom", "poc", "release", "experiment", "spike")
+                }
+
+                then("the additional prefix resolves a worktree path") {
+                    ext.checkoutPath(ext["gort"]) shouldBe File(baseDir, "experiment/new-renderer/gort")
+                }
+
+                then("prune roots include prefixed and standalone workspaces") {
+                    ext.workspaceRootNames shouldBe
+                        setOf(
+                            "feature",
+                            "bugfix",
+                            "custom",
+                            "poc",
+                            "release",
+                            "experiment",
+                            "spike",
+                            "main",
+                            "dev",
+                            "bare",
+                        )
+                }
+            }
+
+            `when`("an invalid additional prefix is configured") {
+                val ext = createExtension()
+
+                then("the entire update is rejected without partially adding prefixes") {
+                    shouldThrow<IllegalArgumentException> {
+                        ext.allowBranchPrefixes("experiment", "Not-Valid")
+                    }
+                    ext.allowedBranchPrefixes shouldBe setOf("feature", "bugfix", "custom", "poc", "release")
+                }
+            }
         }
 
         given("checkForDuplicateBuildNames") {
@@ -414,7 +495,7 @@ class WrkxExtensionTest :
                 then("has default conventions") {
                     val repo = ext.repos.getByName("test")
                     repo.substitute.get().shouldBeFalse()
-                    repo.baseBranch.get().value shouldBe "main"
+                    repo.baseBranch.get() shouldBe "main"
                     repo.category.get() shouldBe ""
                 }
             }

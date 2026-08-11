@@ -11,10 +11,9 @@ import org.gradle.api.initialization.Settings
 import org.gradle.api.logging.Logging
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ProviderFactory
-import zone.clanker.gradle.wrkx.model.GitReference
 import zone.clanker.gradle.wrkx.model.RepositoryEntry
+import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
-import zone.clanker.gradle.wrkx.task.CheckoutTask
 import zone.clanker.gradle.wrkx.task.CloneTask
 import zone.clanker.gradle.wrkx.task.GitOperations
 import zone.clanker.gradle.wrkx.task.PruneTask
@@ -58,16 +57,25 @@ data object Wrkx {
     /** Task name: clone all repos defined in [CONFIG_FILE]. */
     const val TASK_CLONE = "wrkx-clone"
 
-    /** Task name: pull baseBranch for all repos from their remotes. */
+    /** Task name: fetch all branches and prune deleted remote references in existing bare repos. */
+    const val TASK_FETCH = "wrkx-fetch"
+
+    /** Task name: fetch all bare repos and merge base branches into selected worktrees. */
     const val TASK_PULL = "wrkx-pull"
 
-    /** Task name: checkout workingBranch (or baseBranch) across all repos. */
-    const val TASK_CHECKOUT = "wrkx-checkout"
+    /** Task name: create branch-scoped worktrees backed by bare repositories. */
+    const val TASK_WORKTREE = "wrkx-worktree"
+
+    /** Task name: delete the selected branch's managed worktrees and local branches. */
+    const val TASK_WORKTREE_DELETE = "wrkx-worktree-delete"
+
+    /** Gradle property that overrides the branch configured in the DSL. */
+    const val BRANCH_PROP = "wrkx.branch"
 
     /** Task name: generate workspace status report at [OUTPUT_DIR]/repos.md. */
     const val TASK_STATUS = "wrkx-status"
 
-    /** Task name: remove repo directories not defined in [CONFIG_FILE]. */
+    /** Task name: remove clean, merged worktrees after their observed remote branch is deleted. */
     const val TASK_PRUNE = "wrkx-prune"
 
     private const val CATALOG_DIVIDER_LENGTH = 40
@@ -94,14 +102,29 @@ data object Wrkx {
         constructor(
             private val settings: Settings,
             private val objects: ObjectFactory,
+            private val providers: ProviderFactory,
         ) {
             private val logger = Logging.getLogger(SettingsExtension::class.java)
 
             /** Base directory where repos are cloned (sibling to the project). */
             abstract val baseDir: DirectoryProperty
 
-            /** Branch to checkout for enabled repos when running wrkx-checkout. */
+            /** Branch used for enabled repositories' worktrees. */
             var workingBranch: String? = null
+
+            private val extraBranchPrefixes = linkedSetOf<String>()
+
+            internal val allowedBranchPrefixes: Set<String>
+                get() = WorkspaceLayout.defaultBranchPrefixes + extraBranchPrefixes
+
+            internal val workspaceRootNames: Set<String>
+                get() = allowedBranchPrefixes + WorkspaceLayout.standaloneBranches + "bare"
+
+            /** Allow additional branch prefixes without removing the built-in prefixes. */
+            fun allowBranchPrefixes(vararg prefixes: String) {
+                prefixes.forEach(WorkspaceLayout::validatePrefix)
+                extraBranchPrefixes.addAll(prefixes)
+            }
 
             /**
              * Container of all [WorkspaceRepository] entries loaded from [CONFIG_FILE].
@@ -113,7 +136,9 @@ data object Wrkx {
                 objects.domainObjectContainer(WorkspaceRepository::class.java) { name ->
                     objects.newInstance(WorkspaceRepository::class.java, name).apply {
                         substitute.convention(false)
-                        baseBranch.convention(GitReference("main"))
+                        baseBranch.convention("main")
+                        categories.convention(emptyList())
+                        @Suppress("DEPRECATION")
                         category.convention("")
                     }
                 }
@@ -147,7 +172,6 @@ data object Wrkx {
             fun enableAll() {
                 repos.forEach {
                     it.enable(true)
-                    includeRepo(it)
                 }
             }
 
@@ -168,9 +192,8 @@ data object Wrkx {
             /**
              * Enable specific repos by reference for composite build inclusion.
              *
-             * Repos are included as composite builds immediately when enabled,
-             * during settings script evaluation. This ensures IDE sync (IntelliJ)
-             * can resolve the project model correctly.
+             * Repos are included as composite builds after the settings DSL finishes,
+             * so branch and enablement configuration are fully resolved first.
              *
              * ```kotlin
              * wrkx {
@@ -183,7 +206,27 @@ data object Wrkx {
             fun enable(vararg repositories: WorkspaceRepository) {
                 repositories.forEach {
                     it.enable(true)
-                    includeRepo(it)
+                }
+            }
+
+            internal fun activeBranch(): String? {
+                val branch =
+                    providers
+                        .gradleProperty(BRANCH_PROP)
+                        .orNull
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: workingBranch?.takeIf { it.isNotEmpty() }
+                branch?.let { WorkspaceLayout.branchDirectory(it, allowedBranchPrefixes) }
+                return branch
+            }
+
+            internal fun checkoutPath(repo: WorkspaceRepository): File? {
+                val branch = activeBranch()
+                return when {
+                    branch != null && baseDir.isPresent ->
+                        WorkspaceLayout.worktree(baseDir.asFile.get(), branch, repo, allowedBranchPrefixes)
+                    repo.clonePath.isPresent -> repo.clonePath.asFile.get()
+                    else -> null
                 }
             }
 
@@ -241,15 +284,12 @@ data object Wrkx {
             internal fun includeRepo(repo: WorkspaceRepository) {
                 if (!includedBuilds.add(repo.repoName)) return
 
-                if (!repo.clonePath.isPresent) return
-                val cloneDir =
-                    repo.clonePath.asFile
-                        .get()
-                        .canonicalFile
+                val cloneDir = checkoutPath(repo)?.canonicalFile ?: return
                 if (!cloneDir.exists()) {
+                    val task = if (activeBranch() == null) "$TASK_CLONE-${repo.sanitizedBuildName}" else TASK_WORKTREE
                     logger.warn(
                         "wrkx: Repository '${repo.repoName}' not cloned at ${cloneDir.absolutePath}. " +
-                            "Run './gradlew $TASK_CLONE-${repo.sanitizedBuildName}' to clone it.",
+                            "Run './gradlew $task' to create it.",
                     )
                     return
                 }
@@ -353,7 +393,7 @@ data object Wrkx {
                             "name": "gort",
                             "path": "git@github.com:org/repo.git",
                             "baseBranch": "main",
-                            "category": "lib",
+                            "categories": ["libraries"],
                             "substitute": true,
                             "substitutions": ["com.example:lib,lib"]
                           }
@@ -371,12 +411,26 @@ data object Wrkx {
                 json
                     .decodeFromString<List<RepositoryEntry>>(configText)
                     .forEach { entry ->
+                        @Suppress("DEPRECATION")
+                        if (entry.category.isNotBlank()) {
+                            logger.warn(
+                                "wrkx: Repository '${entry.name}' uses deprecated JSON field 'category'. " +
+                                    "Replace it with \"categories\": [\"${entry.category}\"].",
+                            )
+                        }
                         extension.repos.register(entry.name) { repo ->
                             repo.path.set(entry.path)
+                            repo.categories.set(
+                                entry.categories
+                                    .map(String::trim)
+                                    .filter(String::isNotEmpty)
+                                    .distinct(),
+                            )
+                            @Suppress("DEPRECATION")
                             repo.category.set(entry.category)
                             repo.substitutions.set(entry.substitutions)
                             repo.substitute.set(entry.substitute)
-                            repo.baseBranch.set(entry.baseBranch)
+                            repo.baseBranch.set(entry.baseBranch.value)
                             repo.clonePath.set(File(repoDir, entry.directoryName))
                         }
                         val repo = extension.repos.getByName(entry.name)
@@ -401,11 +455,13 @@ data object Wrkx {
                         |Workspace Tasks ($GROUP)
                         |${"=".repeat(CATALOG_DIVIDER_LENGTH)}
                         |
-                        |  $TASK_CLONE       Clone all repos defined in $CONFIG_FILE
-                        |  $TASK_PULL        Pull baseBranch for all repos from their remotes
-                        |  $TASK_CHECKOUT    Checkout workingBranch (or baseBranch) across all repos
-                        |  $TASK_STATUS      Generate workspace status report at $OUTPUT_DIR/repos.md
-                        |  $TASK_PRUNE       Remove repo directories not defined in $CONFIG_FILE
+                        |  $TASK_CLONE       Create or fetch shared bare repositories; no worktrees are changed
+                        |  $TASK_FETCH       Fetch all branches and prune deleted remote references
+                        |  $TASK_PULL        Fetch remotes and merge base branches into selected clean worktrees
+                        |  $TASK_WORKTREE    Create or reuse worktrees for -P$BRANCH_PROP or workingBranch
+                        |  $TASK_WORKTREE_DELETE Delete only the selected branch's worktrees and local branches
+                        |  $TASK_STATUS      Write bare repository, category, enablement, and substitution status
+                        |  $TASK_PRUNE       Remove clean merged worktrees whose observed remote branch was deleted
                         |
                         |Run any task:  ./gradlew <task-name>
                         |Full details:  ./gradlew help --task <task-name>
@@ -416,6 +472,7 @@ data object Wrkx {
                 }
             }
 
+            @Suppress("LongMethod")
             internal fun Project.registerPerRepoTasks(
                 extension: SettingsExtension,
                 repoDir: File,
@@ -423,17 +480,80 @@ data object Wrkx {
                 extension.repos.all { repo ->
                     val safeName = repo.sanitizedBuildName
                     tasks.register("$TASK_CLONE-$safeName", CloneTask::class.java, repo, repoDir)
-                    tasks.register("$TASK_PULL-$safeName", PullTask::class.java, repo, repoDir)
+                    tasks.register("$TASK_FETCH-$safeName").configure { task ->
+                        task.group = GROUP
+                        task.description =
+                            "Fetch all branches for ${repo.repoName} and prune deleted origin references; " +
+                            "does not create or modify worktrees"
+                        task.doLast {
+                            val result = GitOperations.fetchRepo(repo, repoDir)
+                            logger.lifecycle(result)
+                            check(!result.startsWith("FAIL")) { "wrkx: $result" }
+                        }
+                    }
                     tasks.register(
-                        "$TASK_CHECKOUT-$safeName",
-                        CheckoutTask::class.java,
+                        "$TASK_PULL-$safeName",
+                        PullTask::class.java,
                         repo,
                         repoDir,
-                        provider { extension.workingBranch ?: "" },
+                        provider { extension.activeBranch() ?: "" },
+                        extension.allowedBranchPrefixes,
                     )
+                    tasks.register("$TASK_WORKTREE-$safeName").configure { task ->
+                        task.group = GROUP
+                        task.description =
+                            "Fetch ${repo.repoName}'s shared bare repository and create or reuse its selected branch " +
+                            "worktree; existing worktrees and uncommitted changes are never removed"
+                        task.doLast {
+                            val branch =
+                                extension.activeBranch()
+                                    ?: error(missingBranchMessage("$TASK_WORKTREE-$safeName"))
+                            val result =
+                                GitOperations.createWorktree(
+                                    repo,
+                                    repoDir,
+                                    branch,
+                                    extension.allowedBranchPrefixes,
+                                )
+                            logger.lifecycle(result)
+                            check(!result.startsWith("FAIL")) { "wrkx: $result" }
+                        }
+                    }
+                    tasks.register("$TASK_WORKTREE_DELETE-$safeName").configure { task ->
+                        task.group = GROUP
+                        task.description =
+                            "Safely remove ${repo.repoName}'s clean selected WRKX worktree and optionally delete its " +
+                            "merged local branch; never pushes, forces, or changes a remote branch"
+                        task.doLast {
+                            val branch =
+                                extension.activeBranch()
+                                    ?: error(missingBranchMessage("$TASK_WORKTREE_DELETE-$safeName"))
+                            val result =
+                                GitOperations.deleteWorktree(
+                                    repo,
+                                    repoDir,
+                                    branch,
+                                    extension.allowedBranchPrefixes,
+                                )
+                            logger.lifecycle(result)
+                            check(!result.startsWith("FAIL")) { "wrkx: $result" }
+                        }
+                    }
+                    tasks.register("$TASK_PRUNE-$safeName").configure { task ->
+                        task.group = GROUP
+                        task.description =
+                            "Fetch ${repo.repoName}, then remove only clean WRKX worktrees whose branch was observed " +
+                            "on origin, is now deleted there, and is fully merged into origin/baseBranch"
+                        task.doLast {
+                            val result = GitOperations.pruneRepo(repo, repoDir, extension.allowedBranchPrefixes)
+                            logger.lifecycle(result)
+                            check(!result.startsWith("FAIL")) { "wrkx: $result" }
+                        }
+                    }
                 }
             }
 
+            @Suppress("LongMethod")
             internal fun Project.registerLifecycleTasks(
                 extension: SettingsExtension,
                 repoDir: File,
@@ -442,7 +562,10 @@ data object Wrkx {
 
                 tasks.register(TASK_CLONE).configure { task ->
                     task.group = GROUP
-                    task.description = "Clone all repos defined in $CONFIG_FILE"
+                    task.description =
+                        "Create missing shared bare repositories under <workspace>-repos/bare " +
+                        "and fetch/prune existing " +
+                        "ones; does not create, switch, merge, or delete worktrees"
                     task.doLast {
                         GitOperations.runParallel(repos.toList(), "clone") { repo ->
                             GitOperations.cloneRepo(repo, repoDir)
@@ -450,23 +573,62 @@ data object Wrkx {
                     }
                 }
 
-                tasks.register(TASK_PULL).configure { task ->
+                tasks.register(TASK_FETCH).configure { task ->
                     task.group = GROUP
-                    task.description = "Pull baseBranch for all repos from their remotes"
+                    task.description =
+                        "Fetch all branches and prune deleted origin references in every existing shared bare " +
+                        "repository; does not create or modify worktrees"
                     task.doLast {
-                        GitOperations.runParallel(repos.toList(), "pull") { repo ->
-                            GitOperations.pullRepo(repo, repoDir)
+                        GitOperations.runParallel(repos.toList(), "fetch") { repo ->
+                            GitOperations.fetchRepo(repo, repoDir)
                         }
                     }
                 }
 
-                tasks.register(TASK_CHECKOUT).configure { task ->
+                tasks.register(TASK_PULL).configure { task ->
                     task.group = GROUP
-                    task.description = "Checkout workingBranch (or baseBranch) across all repos"
+                    task.description =
+                        "Fetch every enabled repository and merge each origin/baseBranch into " +
+                        "its selected branch " +
+                        "worktree; refuses dirty worktrees and aborts conflicting merges"
                     task.doLast {
-                        val wb = extension.workingBranch ?: ""
-                        GitOperations.runParallel(repos.toList(), "checkout") { repo ->
-                            GitOperations.checkoutRepo(repo, repoDir, wb)
+                        GitOperations.runParallel(repos.filter(WorkspaceRepository::enabled), "pull") { repo ->
+                            GitOperations.pullRepo(
+                                repo,
+                                repoDir,
+                                extension.activeBranch(),
+                                extension.allowedBranchPrefixes,
+                            )
+                        }
+                    }
+                }
+
+                tasks.register(TASK_WORKTREE).configure { task ->
+                    task.group = GROUP
+                    task.description =
+                        "Fetch every enabled repository and create or reuse its selected branch worktree; " +
+                        "existing worktrees and uncommitted changes are never removed"
+                    task.doLast {
+                        val branch =
+                            extension.activeBranch()
+                                ?: error(missingBranchMessage(TASK_WORKTREE))
+                        GitOperations.runParallel(repos.filter(WorkspaceRepository::enabled), "worktree") { repo ->
+                            GitOperations.createWorktree(repo, repoDir, branch, extension.allowedBranchPrefixes)
+                        }
+                    }
+                }
+
+                tasks.register(TASK_WORKTREE_DELETE).configure { task ->
+                    task.group = GROUP
+                    task.description =
+                        "Safely remove only the selected branch's clean WRKX worktrees across all configured " +
+                        "repositories; never pushes, forces, or changes remote branches"
+                    task.doLast {
+                        val branch =
+                            extension.activeBranch()
+                                ?: error(missingBranchMessage(TASK_WORKTREE_DELETE))
+                        GitOperations.runParallel(repos.toList(), "worktree-delete") { repo ->
+                            GitOperations.deleteWorktree(repo, repoDir, branch, extension.allowedBranchPrefixes)
                         }
                     }
                 }
@@ -477,7 +639,21 @@ data object Wrkx {
                 repoDir: File,
             ) {
                 tasks.register(TASK_STATUS, StatusTask::class.java, extension.repos, repoDir)
-                tasks.register(TASK_PRUNE, PruneTask::class.java, extension.repos, repoDir)
+                tasks.register(
+                    TASK_PRUNE,
+                    PruneTask::class.java,
+                    extension.repos,
+                    repoDir,
+                    extension.allowedBranchPrefixes,
+                )
             }
+
+            private fun missingBranchMessage(taskName: String): String =
+                """
+                wrkx: $taskName requires a selected branch.
+                Cause: Neither wrkx.workingBranch nor -P$BRANCH_PROP was provided.
+                Preservation: No repositories or worktrees were changed.
+                Recovery: Run './gradlew $taskName -P$BRANCH_PROP=feature/<kebab-case-name>' or configure workingBranch.
+                """.trimIndent()
         }
 }

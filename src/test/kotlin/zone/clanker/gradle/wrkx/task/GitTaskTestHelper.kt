@@ -1,7 +1,6 @@
 package zone.clanker.gradle.wrkx.task
 
 import org.gradle.api.model.ObjectFactory
-import zone.clanker.gradle.wrkx.model.GitReference
 import zone.clanker.gradle.wrkx.model.RepositoryUrl
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
 import java.io.File
@@ -67,6 +66,6 @@ fun createTestRepo(
     repo.category.set("")
     repo.substitutions.set(emptyList())
     repo.substitute.set(false)
-    repo.baseBranch.set(GitReference(baseBranch))
+    repo.baseBranch.set(baseBranch)
     return repo
 }

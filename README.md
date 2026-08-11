@@ -11,6 +11,9 @@
 
 Work across multiple repos as if they were one project. Define your repositories in JSON, select which ones to work with today in the DSL, and let the plugin wire composite builds with dependency substitution. Changes to one repo are immediately visible in all others -- no publishing, no version bumps, no waiting.
 
+> **Recommended skill:** Use the task-focused guides in [`skills/`](skills/README.md) when configuring WRKX or running
+> workspace lifecycle commands from an AI coding agent.
+
 ## Why wrkx
 
 When your codebase spans multiple repositories, development friction multiplies. You change a library, publish it, bump the version in the consuming app, wait for resolution, discover the change broke something, go back, fix it, publish again. wrkx eliminates this loop.
@@ -39,7 +42,7 @@ pluginManagement {
 }
 
 plugins {
-    id("zone.clanker.gradle.wrkx") version "latest"
+    id("zone.clanker.gradle.wrkx") version "0.41.0"
 }
 
 rootProject.name = "my-workspace"
@@ -58,7 +61,7 @@ wrkx {
     "name": "checkoutUi",
     "path": "git@github.com:MyOrg/checkout-ui.git",
     "baseBranch": "main",
-    "category": "ui",
+    "categories": ["checkout", "ui"],
     "substitute": true,
     "substitutions": ["com.myorg:checkout-ui,:"]
   },
@@ -66,7 +69,7 @@ wrkx {
     "name": "sharedModels",
     "path": "git@github.com:MyOrg/shared-models.git",
     "baseBranch": "main",
-    "category": "core",
+    "categories": ["checkout", "core"],
     "substitute": true,
     "substitutions": ["com.myorg:shared-models,:"]
   },
@@ -74,7 +77,7 @@ wrkx {
     "name": "hostApp",
     "path": "git@github.com:MyOrg/host-app.git",
     "baseBranch": "develop",
-    "category": "apps"
+    "categories": ["checkout", "apps"]
   }
 ]
 ```
@@ -90,8 +93,7 @@ plugins {
 ### Then
 
 ```bash
-./gradlew wrkx-clone       # clone all repos
-./gradlew wrkx-checkout    # checkout feature/checkout-flow in all repos
+./gradlew wrkx-worktree    # clone/fetch repos and create feature/checkout-flow worktrees
 ./gradlew build             # host-app uses local checkoutUi and sharedModels
 ```
 
@@ -104,7 +106,8 @@ Changes to `sharedModels` are instantly visible in `checkoutUi` and `hostApp`. N
 | `name` | yes | -- | Unique identifier. Must be a valid Kotlin identifier (camelCase). Used in DSL, tasks, and logs. |
 | `path` | yes | -- | Git URL or local path. Any format `git clone` accepts (SSH, HTTPS, local). |
 | `baseBranch` | no | `"main"` | The repo's default branch. Where `wrkx-pull` syncs from. |
-| `category` | no | `""` | Grouping label for `wrkx-status` output. |
+| `categories` | no | `[]` | Grouping and ownership labels for `wrkx-status`; repositories may belong to multiple categories. |
+| `category` | no | `""` | Deprecated singular label. Use `categories`; existing files remain supported. |
 | `substitute` | no | `false` | Enable dependency substitution from local source. |
 | `substitutions` | no | `[]` | Maven artifacts this repo provides: `"group:artifact,project"`. |
 
@@ -142,6 +145,15 @@ wrkx {
 
     // Per-repo access via bracket syntax
     this["hostApp"].enable(true)
+
+    // Configure a repo inline and enable the returned repository
+    enable(
+        hostApp {
+            baseBranch = "Teams/Mobile/Release_2026.08-RC-1"
+            categories = listOf("apps", "mobile")
+        },
+        sharedModels,
+    )
 }
 ```
 
@@ -151,11 +163,16 @@ wrkx {
 | `disableAll()` | Disable all repos (does not remove already-included builds) |
 | `enable(vararg repos)` | Enable specific repos and include them as composite builds |
 | `this["name"]` | Access a repo by name for per-repo configuration |
-| `workingBranch = "branch"` | Set working branch for `wrkx-checkout` |
+| `workingBranch = "branch"` | Select the branch for checkout and branch-scoped included builds |
+| `allowBranchPrefixes("name")` | Add allowed branch prefixes without removing the built-in prefixes |
+
+Per-repository `baseBranch` overrides accept Git branch names with uppercase or lowercase letters, dots, underscores,
+hyphens, and nested forward slashes. The override affects that repository only; `workingBranch` still selects the
+shared WRKX worktree branch.
 
 ### How enablement works
 
-The plugin reads `wrkx.json` and registers all repos, but **does not include any as composite builds** until you enable them in the DSL. Calling `enable()` or `enableAll()` immediately wires the repo via `settings.includeBuild()` during settings evaluation. Tasks (clone, pull, checkout) work for all repos regardless of enablement.
+The plugin reads `wrkx.json` and registers all repos, but **does not include any as composite builds** until you enable them in the DSL. Enabled repositories are wired after the settings DSL finishes, ensuring branch selection is resolved first. Tasks work for all repos regardless of enablement.
 
 If no `wrkx { }` block is present, no repos are included as composite builds. You must be explicit.
 
@@ -194,49 +211,158 @@ wrkx {
 | Task | Description |
 |------|-------------|
 | `wrkx` | List all available workspace tasks |
-| `wrkx-clone` | Clone all repos defined in wrkx.json |
-| `wrkx-clone-<name>` | Clone a single repo from its remote |
-| `wrkx-pull` | Pull baseBranch for all repos from their remotes |
-| `wrkx-pull-<name>` | Pull baseBranch for a single repo |
-| `wrkx-checkout` | Checkout workingBranch (or baseBranch) across all repos |
-| `wrkx-checkout-<name>` | Checkout workingBranch (or baseBranch) for a single repo |
+| `wrkx-clone` | Run `git clone --bare` under `workspace-repos/bare` for every repo; fetch existing bare repos |
+| `wrkx-clone-<name>` | Create or update one bare repo under `workspace-repos/bare` |
+| `wrkx-fetch` | Fetch every branch and prune deleted origin references in existing bare repos |
+| `wrkx-fetch-<name>` | Fetch every branch for one existing bare repo |
+| `wrkx-pull` | Fetch enabled repos and merge each baseBranch into its selected clean worktree |
+| `wrkx-pull-<name>` | Fetch one bare repo and merge its baseBranch into its selected clean worktree |
+| `wrkx-worktree` | Create branch-scoped worktrees for enabled repositories only |
+| `wrkx-worktree-<name>` | Create a branch-scoped worktree for a single repo |
+| `wrkx-worktree-delete` | Delete the selected branch's worktrees and local branches across the catalog |
+| `wrkx-worktree-delete-<name>` | Delete one repo's selected-branch worktree and local branch |
 | `wrkx-status` | Generate workspace status report at `.wrkx/repos.md` |
-| `wrkx-prune` | Remove repo directories not defined in wrkx.json |
+| `wrkx-prune` | Remove safe, merged worktrees after their observed remote branch is deleted |
+| `wrkx-prune-<name>` | Apply the same safe pruning rules to one repository |
 
 ```bash
-./gradlew wrkx-clone           # clone all repos
-./gradlew wrkx-clone-gort      # clone just gort
-./gradlew wrkx-pull            # pull baseBranch for all repos
-./gradlew wrkx-checkout        # checkout workingBranch or baseBranch
+./gradlew wrkx-clone           # clone --bare all repos, or fetch existing bare repos
+./gradlew wrkx-clone-gort      # clone --bare just gort, or fetch it when present
+./gradlew wrkx-fetch           # fetch all branches without creating worktrees
+./gradlew wrkx-pull -Pwrkx.branch=feature/new-catalog
+./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
+./gradlew wrkx-worktree-delete # uses workingBranch from settings.gradle.kts
 ./gradlew wrkx-status          # generate workspace status report
-./gradlew wrkx-prune           # remove orphaned repo directories
+./gradlew wrkx-prune           # remove eligible merged worktrees after remote deletion
 ```
 
 ### Parallel execution
 
-Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-checkout`) run git operations across all repos in parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any repo fails.
+Lifecycle tasks (`wrkx-clone`, `wrkx-pull`, `wrkx-worktree`) run git operations across all repos in
+parallel using a fixed thread pool (4 threads). Each repo's result is reported individually, and the task fails if any
+repo fails.
 
-### Checkout behavior
+### Branch worktrees
 
-- **With `workingBranch` set**: creates/checks out that branch from `baseBranch` in all enabled repos. Fails if working directory is dirty -- commit or stash first.
-- **Without `workingBranch`**: checks out each repo's `baseBranch`.
+Set `workingBranch` in the DSL or pass `-Pwrkx.branch=<branch>`, then create the worktrees before building:
+
+```bash
+./gradlew wrkx-worktree -Pwrkx.branch=feature/new-catalog
+./gradlew build -Pwrkx.branch=feature/new-catalog
+```
+
+Repositories are cloned once as bare repositories under `bare/`. Prefixed branch names accept uppercase and lowercase
+letters, numbers, and single hyphens. Prefix matching is case-insensitive and filesystem prefix directories are
+normalized to lowercase.
+The built-in prefixes are `feature`, `bugfix`, `custom`, `poc`, and `release`; `main` and `dev` are valid standalone
+branches. Enabled Gradle builds are included from the selected branch directory.
+
+Before adding a worktree, WRKX fetches and ensures that each configured `baseBranch` exists locally. A missing local
+base is created from `origin/<baseBranch>` when that remote branch exists. If the base is absent both locally and
+remotely, WRKX creates it locally from the fetched remote default branch, without pushing it.
+
+```text
+my-workspace-repos/
+├── bare/
+│   ├── checkout-ui.git/
+│   └── shared-models.git/
+├── feature/
+│   └── new-catalog/
+│       ├── checkout-ui/
+│       └── shared-models/
+└── dev/
+    ├── checkout-ui/
+    └── shared-models/
+```
+
+Add organization-specific prefixes from the same settings DSL:
+
+```kotlin
+wrkx {
+    allowBranchPrefixes("experiment", "prototype")
+    workingBranch = "experiment/new-renderer"
+    enableAll()
+}
+```
+
+Android Studio remains open on `my-workspace/`. Change `workingBranch`, create missing worktrees, and run Gradle Sync;
+the next settings evaluation points every `includeBuild()` at the new branch directory. Worktrees must be created in a
+separate invocation because Gradle selects included builds before tasks execute.
+
+Aggregate `wrkx-clone` and `wrkx-fetch` maintain every repository in `wrkx.json`, including disabled repositories.
+Aggregate `wrkx-worktree` and `wrkx-pull` operate only on repositories enabled in the settings DSL.
+Per-repository tasks remain explicit overrides regardless of enablement.
+
+### Delete and restart a worktree
+
+`wrkx-worktree-delete` targets only the `workingBranch` selected in `settings.gradle.kts`. It safely removes that
+branch's clean managed directories and Git worktree registrations across all configured repositories, including
+disabled repositories that may have been included accidentally. It asks Git to delete the local branch with safe
+`branch -d`; unmerged local branches are retained. Bare repositories, remote branches, and every other branch's
+worktrees are preserved. WRKX never pushes, force-pushes, or deletes remote branches.
+
+Delete only one repository with its generated task:
+
+```bash
+./gradlew wrkx-worktree-delete-application
+```
+
+To restart an unpushed feature after selecting the wrong base:
+
+```kotlin
+wrkx {
+    workingBranch = "Feature/Checkout-Restart"
+    enable(
+        application {
+            baseBranch = "Release/2026.08_Correct-Base"
+        },
+        models,
+    )
+}
+```
+
+```bash
+./gradlew wrkx-worktree-delete
+./gradlew wrkx-worktree
+```
+
+Deletion refuses dirty, locked, or inaccessible worktrees and has no force mode. If `origin/<workingBranch>` exists,
+recreation restores that remote branch; changing `baseBranch` does not rewrite an existing remote branch.
 
 ### Pull behavior
 
-- Fetches and fast-forward merges `origin/<baseBranch>` for each repo.
-- Repos with no remote are skipped with a log message.
+- Always fetches and prunes the shared bare repository first.
+- With a selected branch, merges `origin/<baseBranch>` into that branch's worktree.
+- Refuses a dirty worktree without changing it.
+- Aborts a conflicting automatic merge and reports the worktree path and manual recovery action.
+- Without a selected branch, updates only the bare repository and does not merge a worktree.
+
+### Prune behavior
+
+`wrkx-prune` fetches with `--prune`, then evaluates every WRKX-owned worktree independently. It removes a worktree and
+its local branch only when all of these conditions hold:
+
+- WRKX previously observed the same branch on `origin`.
+- The branch no longer exists on `origin` after the fresh fetch.
+- The local branch tip is fully contained in that repository's `origin/<baseBranch>`.
+- The worktree has no staged, modified, or untracked files.
+- The worktree path exactly matches the configured WRKX layout.
+
+It retains branches that were never pushed, remain on the remote, contain unmerged commits, have local changes, use an
+external worktree path, are detached, or are `main`/`dev`. Merging a pull request does not necessarily delete its remote
+branch; enable remote branch deletion or delete it explicitly before expecting WRKX to prune the worktree.
 
 ## How it works
 
 1. Plugin reads `wrkx.json` at settings evaluation time
 2. All repos are registered in a container (tasks work for all)
 3. DSL runs: you enable/disable repos, set workingBranch
-4. `enable()` / `enableAll()` immediately call `settings.includeBuild()` during settings evaluation -- this ensures IntelliJ IDE sync can resolve the project model correctly
+4. After the DSL finishes, enabled repositories are passed to `settings.includeBuild()` using the selected branch path
 5. Symlinked repo directories are resolved to their canonical paths before inclusion (works around [IDEA-329756](https://youtrack.jetbrains.com/issue/IDEA-329756))
 6. Missing repo directories are warned, not failed -- so `wrkx-clone` works on fresh checkouts
 7. Inclusion is idempotent -- calling `enable()` on the same repo twice is safe
 
-Repos are cloned to a sibling directory:
+Bare repositories and branch worktrees are stored in a sibling directory; the Gradle workspace remains separate:
 
 ```text
 ~/dev/
@@ -244,10 +370,16 @@ Repos are cloned to a sibling directory:
 │   ├── settings.gradle.kts
 │   ├── build.gradle.kts
 │   └── wrkx.json
-└── my-workspace-repos/      <- repos cloned here by wrkx-clone
-    ├── checkout-ui/
-    ├── shared-models/
-    └── host-app/
+└── my-workspace-repos/
+    ├── bare/                <- created and updated by wrkx-clone
+    │   ├── checkout-ui.git/
+    │   ├── shared-models.git/
+    │   └── host-app.git/
+    └── feature/
+        └── checkout-flow/   <- created by wrkx-worktree
+            ├── checkout-ui/
+            ├── shared-models/
+            └── host-app/
 ```
 
 ## Known issues
@@ -264,7 +396,7 @@ This affects **all current Kotlin versions** up to and including 2.4.0-Beta1. It
 
 **What works:**
 - JVM project → JVM included build (e.g. a Kotlin/JVM app consuming a Kotlin/JVM library via wrkx substitution)
-- Clone, pull, checkout, status, prune tasks work for all project types
+- Clone, pull, worktree, status, and prune tasks work for all project types
 
 **What doesn't work:**
 - KMP project → any included build with dependency substitution
@@ -276,6 +408,7 @@ Track the upstream fix at [KT-52172](https://youtrack.jetbrains.com/issue/KT-521
 | Property | Default | Description |
 |----------|---------|-------------|
 | `zone.clanker.wrkx.enabled` | `true` | Disable the plugin entirely |
+| `wrkx.branch` | DSL `workingBranch` | Select the branch worktree used by included builds |
 
 ## Install globally
 
@@ -420,7 +553,7 @@ Architecture is enforced via [Konsist](https://docs.konsist.lemonappdev.com/) in
 | `WrkxApplyTest` | Gradle TestKit: plugin applies cleanly via settings DSL |
 | `WrkxPluginTest` | Gradle TestKit: enableAll, disableAll, enable, workingBranch, composite build wiring, missing repos warn, empty wrkx.json default |
 | `model/*Test` | Value class validation: RepositoryUrl, GitReference, ArtifactSubstitution, RepositoryEntry, WorkspaceRepository |
-| `task/*Test` | Task behavior: CloneTask, PullTask, CheckoutTask, PruneTask, StatusTask, GitOperations parallel execution |
+| `task/*Test` | Task behavior: CloneTask, PullTask, PruneTask, StatusTask, GitOperations parallel execution |
 
 **Integration tests** (`src/test/CloneIntegrationTest.kt`) -- full clone lifecycle against a Gitea server in Testcontainers. Requires Docker. Skipped automatically when Docker is unavailable.
 
@@ -480,7 +613,6 @@ wrkx/
 │   │   ├── report/
 │   │   │   └── ReposCatalogRenderer.kt <- Markdown report builder for wrkx-status
 │   │   └── task/
-│   │       ├── CheckoutTask.kt  <- git checkout per repo
 │   │       ├── CloneTask.kt     <- git clone per repo
 │   │       ├── PruneTask.kt     <- remove orphaned repo directories
 │   │       ├── PullTask.kt      <- git fetch + merge per repo

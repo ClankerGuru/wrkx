@@ -36,7 +36,11 @@ public abstract class WorkspaceRepository
         /** Repository URL or local path used by `git clone`. */
         public abstract val path: Property<RepositoryUrl>
 
-        /** Grouping label for display in the `wrkx-status` report. */
+        /** Grouping labels for ownership and display in the `wrkx-status` report. */
+        public abstract val categories: ListProperty<String>
+
+        /** Deprecated singular grouping label retained for settings DSL compatibility. */
+        @Deprecated("Use categories")
         public abstract val category: Property<String>
 
         /** Maven artifacts this repo provides locally for dependency substitution. */
@@ -46,7 +50,7 @@ public abstract class WorkspaceRepository
         public abstract val substitute: Property<Boolean>
 
         /** The repo's default branch (where `wrkx-pull` syncs from). */
-        public abstract val baseBranch: Property<GitReference>
+        public abstract val baseBranch: Property<String>
 
         /** Absolute directory where this repo is cloned on disk. */
         public abstract val clonePath: DirectoryProperty
@@ -60,11 +64,23 @@ public abstract class WorkspaceRepository
             enabled = value
         }
 
+        /** Configure this repository inline and return it for `enable(repo { ... })`. */
+        public operator fun invoke(action: WorkspaceRepository.() -> Unit): WorkspaceRepository = apply(action)
+
         /** Human-readable name of this repo (same as the container registration name). */
         public val repoName: String get() = name
 
         /** Directory name derived from the repo URL, used for the clone target. */
         public val directoryName: String get() = path.get().directoryName
+
+        /** Normalized categories including a value configured through the deprecated DSL property. */
+        @Suppress("DEPRECATION")
+        public val effectiveCategories: List<String>
+            get() =
+                ((categories.orNull ?: emptyList()) + (category.orNull ?: ""))
+                    .map(String::trim)
+                    .filter(String::isNotEmpty)
+                    .distinct()
 
         /**
          * Gradle-safe build name derived from [directoryName].
