@@ -11,6 +11,7 @@ import io.kotest.core.spec.style.BehaviorSpec
  * - No `try-catch` blocks: prefer `runCatching`/`fold` for explicit error flow
  * - No standalone constant files: constants belong in the object or class that owns them
  * - No wildcard imports: every import must be explicit
+ * - No Git push or remote-delete commands: WRKX never mutates remotes
  */
 class ForbiddenPatternTest :
     BehaviorSpec({
@@ -49,6 +50,16 @@ class ForbiddenPatternTest :
                 then("no import uses a wildcard") {
                     mainScope.files.assertTrue { file ->
                         file.imports.none { it.isWildcard }
+                    }
+                }
+            }
+        }
+
+        given("remote Git state is read-only") {
+            `when`("examining Git operations") {
+                then("no command can push or delete a remote branch") {
+                    mainScope.files.filter { it.name == "GitOperations.kt" }.assertTrue { file ->
+                        !file.text.contains("\"push\"") && !file.text.contains("\"--delete\"")
                     }
                 }
             }

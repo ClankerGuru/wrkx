@@ -11,7 +11,6 @@ import org.gradle.api.initialization.Settings
 import org.gradle.api.logging.Logging
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ProviderFactory
-import zone.clanker.gradle.wrkx.model.GitReference
 import zone.clanker.gradle.wrkx.model.RepositoryEntry
 import zone.clanker.gradle.wrkx.model.WorkspaceLayout
 import zone.clanker.gradle.wrkx.model.WorkspaceRepository
@@ -70,6 +69,9 @@ data object Wrkx {
 
     /** Task name: create branch-scoped worktrees backed by bare repositories. */
     const val TASK_WORKTREE = "wrkx-worktree"
+
+    /** Task name: delete the selected branch's managed worktrees and local branches. */
+    const val TASK_WORKTREE_DELETE = "wrkx-worktree-delete"
 
     /** Gradle property that overrides the branch configured in the DSL. */
     const val BRANCH_PROP = "wrkx.branch"
@@ -138,7 +140,7 @@ data object Wrkx {
                 objects.domainObjectContainer(WorkspaceRepository::class.java) { name ->
                     objects.newInstance(WorkspaceRepository::class.java, name).apply {
                         substitute.convention(false)
-                        baseBranch.convention(GitReference("main"))
+                        baseBranch.convention("main")
                         categories.convention(emptyList())
                         @Suppress("DEPRECATION")
                         category.convention("")
@@ -432,7 +434,7 @@ data object Wrkx {
                             repo.category.set(entry.category)
                             repo.substitutions.set(entry.substitutions)
                             repo.substitute.set(entry.substitute)
-                            repo.baseBranch.set(entry.baseBranch)
+                            repo.baseBranch.set(entry.baseBranch.value)
                             repo.clonePath.set(File(repoDir, entry.directoryName))
                         }
                         val repo = extension.repos.getByName(entry.name)
@@ -462,6 +464,7 @@ data object Wrkx {
                         |  $TASK_PULL        Fetch remotes and merge base branches into selected clean worktrees
                         |  $TASK_CHECKOUT    Compatibility alias for $TASK_WORKTREE
                         |  $TASK_WORKTREE    Create or reuse worktrees for -P$BRANCH_PROP or workingBranch
+                        |  $TASK_WORKTREE_DELETE Delete only the selected branch's worktrees and local branches
                         |  $TASK_STATUS      Write bare repository, category, enablement, and substitution status
                         |  $TASK_PRUNE       Remove clean merged worktrees whose observed remote branch was deleted
                         |
@@ -529,6 +532,26 @@ data object Wrkx {
                             check(!result.startsWith("FAIL")) { "wrkx: $result" }
                         }
                     }
+                    tasks.register("$TASK_WORKTREE_DELETE-$safeName").configure { task ->
+                        task.group = GROUP
+                        task.description =
+                            "Safely remove ${repo.repoName}'s clean selected WRKX worktree and optionally delete its " +
+                            "merged local branch; never pushes, forces, or changes a remote branch"
+                        task.doLast {
+                            val branch =
+                                extension.activeBranch()
+                                    ?: error(missingBranchMessage("$TASK_WORKTREE_DELETE-$safeName"))
+                            val result =
+                                GitOperations.deleteWorktree(
+                                    repo,
+                                    repoDir,
+                                    branch,
+                                    extension.allowedBranchPrefixes,
+                                )
+                            logger.lifecycle(result)
+                            check(!result.startsWith("FAIL")) { "wrkx: $result" }
+                        }
+                    }
                     tasks.register("$TASK_PRUNE-$safeName").configure { task ->
                         task.group = GROUP
                         task.description =
@@ -578,11 +601,11 @@ data object Wrkx {
                 tasks.register(TASK_PULL).configure { task ->
                     task.group = GROUP
                     task.description =
-                        "Fetch every shared bare repository and merge each origin/baseBranch into " +
+                        "Fetch every enabled repository and merge each origin/baseBranch into " +
                         "its selected branch " +
                         "worktree; refuses dirty worktrees and aborts conflicting merges"
                     task.doLast {
-                        GitOperations.runParallel(repos.toList(), "pull") { repo ->
+                        GitOperations.runParallel(repos.filter(WorkspaceRepository::enabled), "pull") { repo ->
                             GitOperations.pullRepo(
                                 repo,
                                 repoDir,
@@ -597,10 +620,10 @@ data object Wrkx {
                     task.group = GROUP
                     task.description =
                         "Compatibility alias for wrkx-worktree; create or reuse the selected branch worktree for " +
-                        "every repository without changing another worktree"
+                        "every enabled repository without changing another worktree"
                     task.doLast {
                         val wb = extension.activeBranch() ?: ""
-                        GitOperations.runParallel(repos.toList(), "checkout") { repo ->
+                        GitOperations.runParallel(repos.filter(WorkspaceRepository::enabled), "checkout") { repo ->
                             GitOperations.checkoutRepo(repo, repoDir, wb, extension.allowedBranchPrefixes)
                         }
                     }
@@ -609,14 +632,29 @@ data object Wrkx {
                 tasks.register(TASK_WORKTREE).configure { task ->
                     task.group = GROUP
                     task.description =
-                        "Fetch every shared bare repository and create or reuse its selected branch worktree; " +
+                        "Fetch every enabled repository and create or reuse its selected branch worktree; " +
                         "existing worktrees and uncommitted changes are never removed"
                     task.doLast {
                         val branch =
                             extension.activeBranch()
                                 ?: error(missingBranchMessage(TASK_WORKTREE))
-                        GitOperations.runParallel(repos.toList(), "worktree") { repo ->
+                        GitOperations.runParallel(repos.filter(WorkspaceRepository::enabled), "worktree") { repo ->
                             GitOperations.createWorktree(repo, repoDir, branch, extension.allowedBranchPrefixes)
+                        }
+                    }
+                }
+
+                tasks.register(TASK_WORKTREE_DELETE).configure { task ->
+                    task.group = GROUP
+                    task.description =
+                        "Safely remove only the selected branch's clean WRKX worktrees across all configured " +
+                        "repositories; never pushes, forces, or changes remote branches"
+                    task.doLast {
+                        val branch =
+                            extension.activeBranch()
+                                ?: error(missingBranchMessage(TASK_WORKTREE_DELETE))
+                        GitOperations.runParallel(repos.toList(), "worktree-delete") { repo ->
+                            GitOperations.deleteWorktree(repo, repoDir, branch, extension.allowedBranchPrefixes)
                         }
                     }
                 }

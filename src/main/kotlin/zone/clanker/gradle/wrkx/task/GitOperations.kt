@@ -164,7 +164,7 @@ internal object GitOperations {
     ): String {
         val localBranch = "refs/heads/$branch"
         val remoteBranch = "refs/remotes/origin/$branch"
-        val base = repo.baseBranch.get().value
+        val base = repo.baseBranch.get()
         val startPoint =
             when {
                 refExists(bareDir, remoteBranch) -> "origin/$branch"
@@ -274,7 +274,7 @@ internal object GitOperations {
             )
         }
 
-        val base = repo.baseBranch.get().value
+        val base = repo.baseBranch.get()
         val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
         if (!refExists(bareDir, "refs/remotes/origin/$base")) {
             return failure(
@@ -314,7 +314,7 @@ internal object GitOperations {
         if (fetchResult.startsWith("FAIL")) return fetchResult
         exec("git", "--git-dir=${bareDir.absolutePath}", "worktree", "prune")
 
-        val baseBranch = repo.baseBranch.get().value
+        val baseBranch = repo.baseBranch.get()
         if (!refExists(bareDir, "refs/remotes/origin/$baseBranch")) {
             return failure(
                 repo = repo,
@@ -440,9 +440,113 @@ internal object GitOperations {
         createWorktree(
             repo = repo,
             repoDir = repoDir,
-            workingBranch = workingBranch.ifBlank { repo.baseBranch.get().value },
+            workingBranch = workingBranch.ifBlank { repo.baseBranch.get() },
             allowedPrefixes = allowedPrefixes,
         )
+
+    @Suppress("LongMethod", "ReturnCount")
+    fun deleteWorktree(
+        repo: WorkspaceRepository,
+        repoDir: File,
+        workingBranch: String,
+        allowedPrefixes: Set<String> = WorkspaceLayout.defaultBranchPrefixes,
+    ): String {
+        val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
+        val target = WorkspaceLayout.worktree(repoDir, workingBranch, repo, allowedPrefixes)
+        if (!bareDir.exists()) {
+            return "SKIP ${repo.repoName}: no bare repository exists; nothing was deleted"
+        }
+
+        val worktrees =
+            parseWorktrees(
+                execOutput("git", "--git-dir=${bareDir.absolutePath}", "worktree", "list", "--porcelain"),
+            )
+        val branchWorktrees = worktrees.filter { it.branch == workingBranch }
+        val unexpected = branchWorktrees.firstOrNull { it.path.canonicalFile != target.canonicalFile }
+        if (unexpected != null) {
+            return deleteFailure(
+                repo,
+                workingBranch,
+                target,
+                "The local branch is registered to a non-WRKX worktree at ${unexpected.path.absolutePath}.",
+            )
+        }
+        val registered = branchWorktrees.any { it.path.canonicalFile == target.canonicalFile }
+        if (target.exists() && !registered) {
+            return deleteFailure(
+                repo,
+                workingBranch,
+                target,
+                "The target directory exists but is not registered as this branch's Git worktree.",
+            )
+        }
+
+        if (registered && target.exists()) {
+            val result =
+                exec(
+                    "git",
+                    "--git-dir=${bareDir.absolutePath}",
+                    "worktree",
+                    "remove",
+                    target.absolutePath,
+                )
+            if (result != 0 || target.exists()) {
+                return deleteFailure(
+                    repo,
+                    workingBranch,
+                    target,
+                    "Git refused safe removal because the worktree is dirty, locked, or inaccessible.",
+                )
+            }
+        } else if (registered) {
+            exec("git", "--git-dir=${bareDir.absolutePath}", "worktree", "prune")
+        }
+
+        val localBranch = "refs/heads/$workingBranch"
+        var branchResult = "local branch did not exist"
+        if (refExists(bareDir, localBranch)) {
+            val deleteResult = exec("git", "--git-dir=${bareDir.absolutePath}", "branch", "-d", workingBranch)
+            branchResult =
+                if (deleteResult == 0) {
+                    exec(
+                        "git",
+                        "--git-dir=${bareDir.absolutePath}",
+                        "config",
+                        "--remove-section",
+                        "branch.$workingBranch",
+                    )
+                    "safely deleted merged local branch"
+                } else {
+                    "preserved local branch because Git considers it unmerged"
+                }
+        }
+
+        removeEmptyParents(target, repoDir)
+        return "OK ${repo.repoName}: removed '$workingBranch' worktree at ${target.absolutePath}; $branchResult"
+    }
+
+    private fun removeEmptyParents(target: File, repoDir: File) {
+        var directory = target.parentFile
+        while (directory != null && directory != repoDir && directory.list()?.isEmpty() == true) {
+            directory.delete()
+            directory = directory.parentFile
+        }
+    }
+
+    private fun deleteFailure(
+        repo: WorkspaceRepository,
+        branch: String,
+        target: File,
+        cause: String,
+    ): String =
+        """
+        FAIL ${repo.repoName}: worktree delete failed
+        Branch: $branch
+        Path: ${target.absolutePath}
+        Cause: $cause
+        Preservation: No remote branch, bare repository, local branch, or other worktree was deleted.
+        Recovery: Run './gradlew wrkx-status', inspect the bare repository's worktree list, and retry.
+        """.trimIndent()
 
     private fun failure(
         repo: WorkspaceRepository,

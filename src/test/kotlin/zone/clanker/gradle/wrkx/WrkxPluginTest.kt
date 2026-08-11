@@ -339,5 +339,38 @@ class WrkxPluginTest :
                 projectDir.deleteRecursively()
                 reposDir.deleteRecursively()
             }
+
+            `when`("DSL configures and enables a repository inline") {
+                val projectDir = tempProject()
+                projectDir.resolve("wrkx.json").writeText(
+                    """
+                    [
+                      {"name": "application", "path": "git@github.com:example/application.git"},
+                      {"name": "models", "path": "git@github.com:example/models.git"}
+                    ]
+                    """.trimIndent(),
+                )
+                projectDir.withSettings(
+                    """
+                    enable(
+                        application {
+                            baseBranch = "Release/2026.08_Feature-1"
+                            categories = listOf("application", "shared-app")
+                        },
+                        models,
+                    )
+                    """.trimIndent(),
+                )
+
+                then("the configured repository is enabled with the exact base branch") {
+                    val result = projectDir.gradle("wrkx-status").build()
+                    result.task(":wrkx-status")?.outcome shouldBe TaskOutcome.SUCCESS
+                    val status = projectDir.resolve(".wrkx/repos.md").readText()
+                    status shouldContain "`Release/2026.08_Feature-1`"
+                    status shouldContain "application, shared-app"
+                }
+
+                projectDir.deleteRecursively()
+            }
         }
     })
