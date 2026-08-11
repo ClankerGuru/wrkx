@@ -9,7 +9,6 @@ whose name matches the Gradle task you need to run.
 | [`wrkx-clone`](wrkx-clone/SKILL.md) | Create or refresh shared bare repositories |
 | [`wrkx-fetch`](wrkx-fetch/SKILL.md) | Fetch and prune remote references without creating worktrees |
 | [`wrkx-worktree`](wrkx-worktree/SKILL.md) | Create branch-scoped worktrees for enabled repositories |
-| [`wrkx-checkout`](wrkx-checkout/SKILL.md) | Use the compatibility alias for worktree creation |
 | [`wrkx-pull`](wrkx-pull/SKILL.md) | Merge each repository's base branch into a clean selected worktree |
 | [`wrkx-worktree-delete`](wrkx-worktree-delete/SKILL.md) | Safely remove one selected branch's managed worktrees |
 | [`wrkx-status`](wrkx-status/SKILL.md) | Generate and interpret `.wrkx/repos.md` |

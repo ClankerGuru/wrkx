@@ -142,8 +142,9 @@ internal object GitOperations {
         val target = WorkspaceLayout.worktree(repoDir, workingBranch, repo, allowedPrefixes)
         val bareDir = WorkspaceLayout.bareRepository(repoDir, repo)
         val cloneResult = cloneRepo(repo, repoDir)
+        if (cloneResult.startsWith("FAIL")) return cloneResult
+        ensureLocalBaseBranch(repo, bareDir, target, repo.baseBranch.get())?.let { return it }
         return when {
-            cloneResult.startsWith("FAIL") -> cloneResult
             target.exists() -> "SKIP ${repo.repoName}: worktree already exists at ${target.absolutePath}"
             else -> {
                 target.parentFile?.mkdirs()
@@ -169,17 +170,7 @@ internal object GitOperations {
             when {
                 refExists(bareDir, remoteBranch) -> "origin/$branch"
                 refExists(bareDir, "refs/remotes/origin/$base") -> "origin/$base"
-                refExists(bareDir, "refs/heads/$base") -> base
-                else ->
-                    return failure(
-                        repo = repo,
-                        operation = "worktree",
-                        cause = "Base branch '$base' was not found in local or origin references.",
-                        path = target,
-                        recovery =
-                            "Verify baseBranch in wrkx.json, then run " +
-                                "'./gradlew wrkx-clone-${repo.sanitizedBuildName}'.",
-                    )
+                else -> base
             }
         val command =
             if (refExists(bareDir, localBranch)) {
@@ -209,6 +200,74 @@ internal object GitOperations {
                 recovery =
                     "Run 'git --git-dir=${bareDir.absolutePath} worktree list', " +
                         "resolve the conflict, and retry.",
+            )
+        }
+    }
+
+    @Suppress("LongMethod", "ReturnCount")
+    private fun ensureLocalBaseBranch(
+        repo: WorkspaceRepository,
+        bareDir: File,
+        target: File,
+        base: String,
+    ): String? {
+        if (exec("git", "check-ref-format", "--branch", base) != 0) {
+            return failure(
+                repo = repo,
+                operation = "worktree",
+                cause = "Configured base branch '$base' is not a valid Git branch name.",
+                path = target,
+                recovery = "Correct baseBranch in wrkx.json or the settings DSL, then retry.",
+            )
+        }
+        if (refExists(bareDir, "refs/heads/$base")) return null
+
+        val remoteBase = "refs/remotes/origin/$base"
+        val startPoint =
+            if (refExists(bareDir, remoteBase)) {
+                "origin/$base"
+            } else {
+                val setHeadResult =
+                    exec("git", "--git-dir=${bareDir.absolutePath}", "remote", "set-head", "origin", "--auto")
+                if (setHeadResult != 0) {
+                    return failure(
+                        repo = repo,
+                        operation = "worktree",
+                        cause =
+                            "Base branch '$base' was not found locally or on origin, and origin's default branch " +
+                                "could not be determined after fetching.",
+                        path = target,
+                        recovery = "Verify origin's default branch and remote HEAD, then retry the worktree task.",
+                    )
+                }
+                execOutput(
+                    "git",
+                    "--git-dir=${bareDir.absolutePath}",
+                    "symbolic-ref",
+                    "--quiet",
+                    "--short",
+                    "refs/remotes/origin/HEAD",
+                ).takeIf(String::isNotBlank)
+                    ?: return failure(
+                        repo = repo,
+                        operation = "worktree",
+                        cause =
+                            "Base branch '$base' was not found locally or on origin, and origin's default branch " +
+                                "could not be determined after fetching.",
+                        path = target,
+                        recovery = "Verify origin's default branch and remote HEAD, then retry the worktree task.",
+                    )
+            }
+        val result = exec("git", "--git-dir=${bareDir.absolutePath}", "branch", base, startPoint)
+        return if (result == 0) {
+            null
+        } else {
+            failure(
+                repo = repo,
+                operation = "worktree",
+                cause = "Could not create local base branch '$base' from '$startPoint'.",
+                path = target,
+                recovery = "Inspect the bare repository's refs and retry the worktree task.",
             )
         }
     }
@@ -430,19 +489,6 @@ internal object GitOperations {
         val path: File,
         val branch: String?,
     )
-
-    fun checkoutRepo(
-        repo: WorkspaceRepository,
-        repoDir: File,
-        workingBranch: String,
-        allowedPrefixes: Set<String> = WorkspaceLayout.defaultBranchPrefixes,
-    ): String =
-        createWorktree(
-            repo = repo,
-            repoDir = repoDir,
-            workingBranch = workingBranch.ifBlank { repo.baseBranch.get() },
-            allowedPrefixes = allowedPrefixes,
-        )
 
     @Suppress("LongMethod", "ReturnCount")
     fun deleteWorktree(

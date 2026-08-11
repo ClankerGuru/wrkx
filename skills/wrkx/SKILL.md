@@ -73,7 +73,7 @@ status metadata, not an enablement selector. Configure one repository inline wit
 ## Scope rules
 
 - `wrkx-clone`, `wrkx-fetch`, `wrkx-status`, `wrkx-worktree-delete`, and `wrkx-prune` process the full catalog.
-- `wrkx-worktree`, `wrkx-checkout`, and `wrkx-pull` aggregate tasks process enabled repositories only.
+- `wrkx-worktree` and `wrkx-pull` aggregate tasks process enabled repositories only.
 - Every generated `-<repo>` task is an explicit override and works regardless of repository enablement.
 - `<repo>` is derived from the sanitized Git URL directory name, not necessarily the JSON `name`; list exact tasks with
   `./gradlew tasks --group wrkx`.
