@@ -11,6 +11,9 @@
 
 Work across multiple repos as if they were one project. Define your repositories in JSON, select which ones to work with today in the DSL, and let the plugin wire composite builds with dependency substitution. Changes to one repo are immediately visible in all others -- no publishing, no version bumps, no waiting.
 
+> **Recommended skill:** Use the task-focused guides in [`skills/`](skills/README.md) when configuring WRKX or running
+> workspace lifecycle commands from an AI coding agent.
+
 ## Why wrkx
 
 When your codebase spans multiple repositories, development friction multiplies. You change a library, publish it, bump the version in the consuming app, wait for resolution, discover the change broke something, go back, fix it, publish again. wrkx eliminates this loop.
