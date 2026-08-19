@@ -80,6 +80,11 @@ class WrkxExtensionTest :
                         .enabled
                         .shouldBeFalse()
                 }
+
+                then("the catalog still has both entries — disableAll is not empty") {
+                    ext.repos shouldHaveSize 2
+                    ext.repos.names.toSet() shouldBe setOf("alpha", "beta")
+                }
             }
         }
 
@@ -108,6 +113,40 @@ class WrkxExtensionTest :
                         .getByName("gamma")
                         .enabled
                         .shouldBeTrue()
+                }
+            }
+        }
+
+        given("extension pin") {
+
+            `when`("disableAll then enable a subset") {
+                val ext = createExtension()
+                ext.addRepo("alpha", "org/alpha")
+                ext.addRepo("beta", "org/beta")
+                ext.addRepo("gamma", "org/gamma")
+                ext.enableAll()
+                ext.disableAll()
+                ext.enable(ext.repos.getByName("alpha"), ext.repos.getByName("gamma"))
+
+                then("only the pinned repos are enabled") {
+                    ext.repos
+                        .getByName("alpha")
+                        .enabled
+                        .shouldBeTrue()
+                    ext.repos
+                        .getByName("beta")
+                        .enabled
+                        .shouldBeFalse()
+                    ext.repos
+                        .getByName("gamma")
+                        .enabled
+                        .shouldBeTrue()
+                    ext.repos.count { it.enabled } shouldBe 2
+                }
+
+                then("the catalog still has every registered repo") {
+                    ext.repos shouldHaveSize 3
+                    ext.repos.names.toSet() shouldBe setOf("alpha", "beta", "gamma")
                 }
             }
         }
